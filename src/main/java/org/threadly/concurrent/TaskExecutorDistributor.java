@@ -139,6 +139,71 @@ public class TaskExecutorDistributor {
   }
   
   /**
+   * Will move any waiting tasks from a current key to a new execution key.
+   * This is a one time move, if after this call additional tasks are executed 
+   * under the original key, those will NOT be moved to the new key.
+   * 
+   * This will however make sure that at the point of returning from this call 
+   * no tasks will be running under the original key.  With that said if tasks 
+   * are scheduled under the original key during this call, they will start 
+   * executing under the original key after this call returns.
+   * 
+   * If tasks are currently running under the newKey they will continue to run 
+   * during this process.  We will _attempt_ to block the new key from running 
+   * new tasks, but this is only a loose attempt.
+   * 
+   * @param originalKey key for original tasks to move from
+   * @param newKey new key to move tasks to
+   * @throws InterruptedException if thread is interrupted while waiting for tasks on original key to finish
+   */
+  public void moveCurrentTasks(Object originalKey, Object newKey) throws InterruptedException {
+    if (originalKey == null) {
+      throw new IllegalArgumentException("Must provide original key");
+    } else if (newKey == null) {
+      throw new IllegalArgumentException("Must provide new key");
+    } else if (originalKey.hashCode() == newKey.hashCode()) {
+      return; // no-op
+    }
+    
+    VirtualLock originalLock = sLock.getLock(originalKey);
+    synchronized (originalLock) {
+      TaskQueueWorker originalWorker = taskWorkers.get(originalKey);
+      if (originalWorker != null) {
+        VirtualLock newLock = sLock.getLock(originalKey);
+        synchronized (newLock) {
+          boolean needToStartNewWorker = false;
+          TaskQueueWorker newWorker = taskWorkers.get(newKey);
+          if (newWorker == null) {
+            newWorker = new TaskQueueWorker(newKey, newLock);
+            taskWorkers.put(newKey, newWorker);
+            needToStartNewWorker = true;
+          }
+          
+          // move all waiting tasks from the original worker to the new one
+          originalWorker.drainTo(newWorker);
+          
+          if (originalWorker.isStarted()) {
+            /* wait for tasks to finish...
+             * we hold the lock for the new worker during this time 
+             * to prevent it from taking new tasks until the old worker has finished
+             */
+            while (! originalWorker.isFinished()) {
+              /* wait on original worker lock so it can 
+               * synchronize on it to mark itself as finished
+               */
+              originalLock.await();
+            }
+          }
+          
+          if (needToStartNewWorker) {
+            executor.execute(newWorker);
+          }
+        }
+      }
+    }
+  }
+  
+  /**
    * Worker which will consume through a given queue of tasks.
    * Each key is represented by one worker at any given time.
    * 
@@ -148,18 +213,49 @@ public class TaskExecutorDistributor {
     private final Object mapKey;
     private final VirtualLock agentLock;
     private LinkedList<Runnable> queue;
+    private boolean started;
+    private boolean finished;
+    
+    private TaskQueueWorker(Object mapKey, 
+                            VirtualLock agentLock) {
+      this.mapKey = mapKey;
+      this.agentLock = agentLock;
+      this.queue = new LinkedList<Runnable>();
+      started = false;
+      finished = false;
+    }
     
     private TaskQueueWorker(Object mapKey, 
                             VirtualLock agentLock, 
                             Runnable firstTask) {
-      this.mapKey = mapKey;
-      this.agentLock = agentLock;
-      this.queue = new LinkedList<Runnable>();
+      this(mapKey, agentLock);
+      
       queue.add(firstTask);
     }
     
-    public void add(Runnable task) {
+    // should be locked around agentLock before calling
+    private void add(Runnable task) {
       queue.addLast(task);
+    }
+
+    // should be locked around agentLock before calling
+    private void addAll(List<Runnable> tasks) {
+      queue.addAll(tasks);
+    }
+
+    // should be locked around agentLock and provided workers lock before calling
+    private void drainTo(TaskQueueWorker worker) {
+      worker.addAll(queue);
+      queue.clear();
+    }
+
+    // should be locked around agentLock before calling
+    private boolean isStarted() {
+      return started;
+    }
+    
+    private boolean isFinished() {
+      return finished;
     }
     
     @Override
@@ -167,10 +263,14 @@ public class TaskExecutorDistributor {
       while (true) {
         List<Runnable> nextList;
         synchronized (agentLock) {
+          started = true;
           nextList = queue;
           
           if (nextList.isEmpty()) {  // stop consuming tasks
             taskWorkers.remove(mapKey);
+            finished = true;
+            
+            agentLock.signalAll();
             break;
           } else {  // prepare queue for future tasks
             queue = new LinkedList<Runnable>();
