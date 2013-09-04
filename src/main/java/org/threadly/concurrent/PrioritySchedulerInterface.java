@@ -2,13 +2,15 @@ package org.threadly.concurrent;
 
 import java.util.concurrent.Callable;
 
+import org.threadly.concurrent.future.ListenableFuture;
+
 /**
  * This interface represents schedulers which can not only execute
  * and schedule tasks, but run based off a given priority as well.
  * 
  * @author jent - Mike Jensen
  */
-public interface PrioritySchedulerInterface extends SimpleSchedulerInterface {
+public interface PrioritySchedulerInterface extends SubmitterSchedulerInterface {
   /**
    * Executes the task as soon as possible with the given priority.  
    * 

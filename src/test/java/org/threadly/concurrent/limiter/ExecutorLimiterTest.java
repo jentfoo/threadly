@@ -1,4 +1,4 @@
-package org.threadly.concurrent;
+package org.threadly.concurrent.limiter;
 
 import static org.junit.Assert.*;
 
@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.threadly.concurrent.PriorityScheduledExecutor;
+import org.threadly.concurrent.limiter.ExecutorLimiter;
 import org.threadly.test.concurrent.TestRunnable;
 import org.threadly.test.concurrent.TestUtils;
 
@@ -57,6 +59,11 @@ public class ExecutorLimiterTest {
     } catch (IllegalArgumentException e) {
       // expected
     }
+  }
+  
+  @Test
+  public void getMaxConcurrencyTest() {
+    assertEquals(limiter.getMaxConcurrency(), PARALLEL_COUNT);
   }
   
   @Test

@@ -1,13 +1,19 @@
-package org.threadly.concurrent;
+package org.threadly.concurrent.limiter;
 
 import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Future;
+
+import org.threadly.concurrent.PrioritySchedulerInterface;
+import org.threadly.concurrent.TaskPriority;
+import org.threadly.concurrent.VirtualRunnable;
+import org.threadly.concurrent.future.FutureFuture;
+import org.threadly.concurrent.future.FutureListenableFuture;
+import org.threadly.concurrent.future.ListenableFuture;
 
 /**
  * This class is designed to limit how much parallel execution happens 
- * on a provided {@link SimpleSchedulerInterface}.  This allows the 
+ * on a provided {@link PrioritySchedulerInterface}.  This allows the 
  * implementor to have one thread pool for all their code, and if 
  * they want certain sections to have less levels of parallelism 
  * (possibly because those those sections would completely consume the 
@@ -21,31 +27,31 @@ import java.util.concurrent.Future;
  * 
  * @author jent - Mike Jensen
  */
-public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter 
-                                    implements SimpleSchedulerInterface {
-  protected final SimpleSchedulerInterface scheduler;
+public class PrioritySchedulerLimiter extends AbstractSchedulerLimiter 
+                                      implements PrioritySchedulerInterface {
+  protected final PrioritySchedulerInterface scheduler;
   protected final Queue<Wrapper> waitingTasks;
   
   /**
-   * Constructs a new limiter that implements the {@link SimpleSchedulerInterface}.
+   * Constructs a new limiter that implements the {@link PrioritySchedulerInterface}.
    * 
-   * @param scheduler {@link SimpleSchedulerInterface} implementation to submit task executions to.
+   * @param scheduler {@link PrioritySchedulerInterface} implementation to submit task executions to.
    * @param maxConcurrency maximum qty of runnables to run in parallel
    */
-  public SimpleSchedulerLimiter(SimpleSchedulerInterface scheduler, 
-                                int maxConcurrency) {
+  public PrioritySchedulerLimiter(PrioritySchedulerInterface scheduler, 
+                                  int maxConcurrency) {
     this(scheduler, maxConcurrency, null);
   }
   
   /**
-   * Constructs a new limiter that implements the {@link SimpleSchedulerInterface}.
+   * Constructs a new limiter that implements the {@link PrioritySchedulerInterface}.
    * 
-   * @param scheduler {@link SimpleSchedulerInterface} implementation to submit task executions to.
+   * @param scheduler {@link PrioritySchedulerInterface} implementation to submit task executions to.
    * @param maxConcurrency maximum qty of runnables to run in parallel
    * @param subPoolName name to describe threads while tasks running in pool (null to not change thread names)
    */
-  public SimpleSchedulerLimiter(SimpleSchedulerInterface scheduler, 
-                                int maxConcurrency, String subPoolName) {
+  public PrioritySchedulerLimiter(PrioritySchedulerInterface scheduler, 
+                                  int maxConcurrency, String subPoolName) {
     super(maxConcurrency, subPoolName);
     
     if (scheduler == null) {
@@ -69,18 +75,69 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
         Wrapper next = waitingTasks.poll();
         if (next.hasFuture()) {
           if (next.isCallable()) {
-            Future<?> f = scheduler.submit(next.getCallable());
+            ListenableFuture<?> f = scheduler.submit(next.getCallable(), next.getPriority());
             next.getFuture().setParentFuture(f);
           } else {
-            Future<?> f = scheduler.submit(next.getRunnable());
+            ListenableFuture<?> f = scheduler.submit(next.getRunnable(), next.getPriority());
             next.getFuture().setParentFuture(f);
           }
         } else {
           // all callables will have futures, so we know this is a runnable
-          scheduler.execute(next.getRunnable());
+          scheduler.execute(next.getRunnable(), next.getPriority());
         }
       }
     }
+  }
+
+  @Override
+  public void execute(Runnable task) {
+    execute(task, scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public ListenableFuture<?> submit(Runnable task) {
+    return submit(task, scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public <T> ListenableFuture<T> submit(Runnable task, T result) {
+    return submit(task, result, scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public <T> ListenableFuture<T> submit(Callable<T> task) {
+    return submit(task, scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public void schedule(Runnable task, long delayInMs) {
+    schedule(task, delayInMs, 
+             scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public ListenableFuture<?> submitScheduled(Runnable task, long delayInMs) {
+    return submitScheduled(task, delayInMs, 
+                           scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public <T> ListenableFuture<T> submitScheduled(Runnable task, T result, long delayInMs) {
+    return submitScheduled(task, result, delayInMs, 
+                           scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public <T> ListenableFuture<T> submitScheduled(Callable<T> task, long delayInMs) {
+    return submitScheduled(task, delayInMs, 
+                           scheduler.getDefaultPriority());
+  }
+
+  @Override
+  public void scheduleWithFixedDelay(Runnable task, long initialDelay,
+                                     long recurringDelay) {
+    scheduleWithFixedDelay(task, initialDelay, recurringDelay, 
+                           scheduler.getDefaultPriority());
   }
 
   @Override
@@ -89,15 +146,18 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   @Override
-  public void execute(Runnable task) {
+  public void execute(Runnable task, TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide task");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
     
-    RunnableFutureWrapper wrapper = new RunnableFutureWrapper(task, null);
+    PriorityRunnableWrapper wrapper = new PriorityRunnableWrapper(task, priority, null);
     
     if (canRunTask()) {  // try to avoid adding to queue if we can
-      scheduler.execute(wrapper);
+      scheduler.execute(wrapper, priority);
     } else {
       waitingTasks.add(wrapper);
       consumeAvailable(); // call to consume in case task finished after first check
@@ -105,29 +165,32 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   @Override
-  public Future<?> submit(Runnable task) {
-    return submit(task, null);
+  public ListenableFuture<?> submit(Runnable task, TaskPriority priority) {
+    return submit(task, null, priority);
   }
 
   @Override
-  public <T> Future<T> submit(Runnable task, T result) {
+  public <T> ListenableFuture<T> submit(Runnable task, T result, TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide task");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
     
-    FutureFuture<T> ff = new FutureFuture<T>();
+    FutureListenableFuture<T> ff = new FutureListenableFuture<T>();
     
-    doSubmit(task, result, ff);
+    doSubmit(task, result, priority, ff);
     
     return ff;
   }
   
   private <T> void doSubmit(Runnable task, T result, 
-                            FutureFuture<T> ff) {
-    RunnableFutureWrapper wrapper = new RunnableFutureWrapper(task, ff);
+                            TaskPriority priority, FutureFuture<T> ff) {
+    PriorityRunnableWrapper wrapper = new PriorityRunnableWrapper(task, priority, ff);
     
     if (canRunTask()) {  // try to avoid adding to queue if we can
-      ff.setParentFuture(scheduler.submit(wrapper, result));
+      ff.setParentFuture(scheduler.submit(wrapper, result, priority));
     } else {
       waitingTasks.add(wrapper);
       consumeAvailable(); // call to consume in case task finished after first check
@@ -135,24 +198,27 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   @Override
-  public <T> Future<T> submit(Callable<T> task) {
+  public <T> ListenableFuture<T> submit(Callable<T> task, TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide task");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
     
-    FutureFuture<T> ff = new FutureFuture<T>();
+    FutureListenableFuture<T> ff = new FutureListenableFuture<T>();
     
-    doSubmit(task, ff);
+    doSubmit(task, priority, ff);
     
     return ff;
   }
   
   private <T> void doSubmit(Callable<T> task, 
-                            FutureFuture<T> ff) {
-    CallableFutureWrapper<T> wrapper = new CallableFutureWrapper<T>(task, ff);
+                            TaskPriority priority, FutureFuture<T> ff) {
+    PriorityCallableWrapper<T> wrapper = new PriorityCallableWrapper<T>(task, priority, ff);
     
     if (canRunTask()) {  // try to avoid adding to queue if we can
-      ff.setParentFuture(scheduler.submit(wrapper));
+      ff.setParentFuture(scheduler.submit(wrapper, priority));
     } else {
       waitingTasks.add(wrapper);
       consumeAvailable(); // call to consume in case task finished after first check
@@ -160,59 +226,72 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   @Override
-  public void schedule(Runnable task, long delayInMs) {
+  public void schedule(Runnable task, long delayInMs, 
+                       TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide a task");
     } else if (delayInMs < 0) {
       throw new IllegalArgumentException("delayInMs must be >= 0");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
     
     if (delayInMs == 0) {
-      execute(task);
+      execute(task, priority);
     } else {
-      scheduler.schedule(new DelayedExecutionRunnable<Object>(task, null, null), 
-                         delayInMs);
+      scheduler.schedule(new DelayedExecutionRunnable<Object>(task, null, priority, null), 
+                         delayInMs, TaskPriority.High);
     }
   }
 
   @Override
-  public Future<?> submitScheduled(Runnable task, long delayInMs) {
-    return submitScheduled(task, null, delayInMs);
+  public ListenableFuture<?> submitScheduled(Runnable task, long delayInMs,
+                                             TaskPriority priority) {
+    return submitScheduled(task, null, delayInMs, priority);
   }
 
   @Override
-  public <T> Future<T> submitScheduled(Runnable task, T result, long delayInMs) {
+  public <T> ListenableFuture<T> submitScheduled(Runnable task, T result, long delayInMs,
+                                                 TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide a task");
     } else if (delayInMs < 0) {
       throw new IllegalArgumentException("delayInMs must be >= 0");
     }
-
-    FutureFuture<T> ff = new FutureFuture<T>();
-    if (delayInMs == 0) {
-      doSubmit(task, result, ff);
-    } else {
-      scheduler.schedule(new DelayedExecutionRunnable<T>(task, result, ff), 
-                         delayInMs);
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
     }
-    
+
+    FutureListenableFuture<T> ff = new FutureListenableFuture<T>();
+    if (delayInMs == 0) {
+      doSubmit(task, result, priority, ff);
+    } else {
+      scheduler.schedule(new DelayedExecutionRunnable<T>(task, result, priority, ff), 
+                         delayInMs, TaskPriority.High);
+    }
+      
     return ff;
   }
 
   @Override
-  public <T> Future<T> submitScheduled(Callable<T> task, long delayInMs) {
+  public <T> ListenableFuture<T> submitScheduled(Callable<T> task, long delayInMs,
+                                                 TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide a task");
     } else if (delayInMs < 0) {
       throw new IllegalArgumentException("delayInMs must be >= 0");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
 
-    FutureFuture<T> ff = new FutureFuture<T>();
+    FutureListenableFuture<T> ff = new FutureListenableFuture<T>();
     if (delayInMs == 0) {
-      doSubmit(task, ff);
+      doSubmit(task, priority, ff);
     } else {
-      scheduler.schedule(new DelayedExecutionCallable<T>(task, ff), 
-                         delayInMs);
+      scheduler.schedule(new DelayedExecutionCallable<T>(task, priority, ff), 
+                         delayInMs, priority);
     }
     
     return ff;
@@ -220,7 +299,7 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
 
   @Override
   public void scheduleWithFixedDelay(Runnable task, long initialDelay,
-                                     long recurringDelay) {
+                                     long recurringDelay, TaskPriority priority) {
     if (task == null) {
       throw new IllegalArgumentException("Must provide a task");
     } else if (initialDelay < 0) {
@@ -228,15 +307,23 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
     } else if (recurringDelay < 0) {
       throw new IllegalArgumentException("recurringDelay must be >= 0");
     }
+    if (priority == null) {
+      priority = scheduler.getDefaultPriority();
+    }
     
-    RecurringRunnableWrapper rrw = new RecurringRunnableWrapper(task, recurringDelay);
+    RecurringRunnableWrapper rrw = new RecurringRunnableWrapper(task, recurringDelay, priority);
     
     if (initialDelay == 0) {
-      execute(rrw);
+      execute(rrw, priority);
     } else {
-      scheduler.schedule(new DelayedExecutionRunnable<Object>(rrw, null, null), 
-                         initialDelay);
+      scheduler.schedule(new DelayedExecutionRunnable<Object>(rrw, null, priority, null), 
+                         initialDelay, TaskPriority.High);
     }
+  }
+
+  @Override
+  public TaskPriority getDefaultPriority() {
+    return scheduler.getDefaultPriority();
   }
   
   /**
@@ -248,21 +335,24 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   protected class DelayedExecutionRunnable<T> extends VirtualRunnable {
     private final Runnable runnable;
     private final T runnableResult;
+    private final TaskPriority priority;
     private final FutureFuture<T> future;
 
     public DelayedExecutionRunnable(Runnable runnable, T runnableResult, 
+                                    TaskPriority priority, 
                                     FutureFuture<T> future) {
       this.runnable = runnable;
       this.runnableResult = runnableResult;
+      this.priority = priority;
       this.future = future;
     }
     
     @Override
     public void run() {
       if (future == null) {
-        execute(runnable);
+        execute(runnable, priority);
       } else {
-        doSubmit(runnable, runnableResult, future);
+        doSubmit(runnable, runnableResult, priority, future);
       }
     }
   }
@@ -275,22 +365,25 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
    */
   protected class DelayedExecutionCallable<T> extends VirtualRunnable {
     private final Callable<T> callable;
+    private final TaskPriority priority;
     private final FutureFuture<T> future;
 
     public DelayedExecutionCallable(Callable<T> runnable, 
+                                    TaskPriority priority, 
                                     FutureFuture<T> future) {
       this.callable = runnable;
+      this.priority = priority;
       this.future = future;
     }
     
     @Override
     public void run() {
-      doSubmit(callable, future);
+      doSubmit(callable, priority, future);
     }
   }
 
   /**
-   * Wrapper for tasks which are executed in this sub pool, 
+   * Wrapper for priority tasks which are executed in this sub pool, 
    * this ensures that handleTaskFinished() will be called 
    * after the task completes.
    * 
@@ -299,19 +392,23 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   protected class RecurringRunnableWrapper extends LimiterRunnableWrapper
                                            implements Wrapper  {
     private final long recurringDelay;
+    private final TaskPriority priority;
     private final DelayedExecutionRunnable<?> delayRunnable;
     
     public RecurringRunnableWrapper(Runnable runnable, 
-                                    long recurringDelay) {
+                                    long recurringDelay, 
+                                    TaskPriority priority) {
       super(runnable);
       
       this.recurringDelay = recurringDelay;
-      delayRunnable = new DelayedExecutionRunnable<Object>(this, null, null);
+      this.priority = priority;
+      delayRunnable = new DelayedExecutionRunnable<Object>(this, null, priority, null);
     }
     
     @Override
     protected void doAfterRunTasks() {
-      scheduler.schedule(delayRunnable, recurringDelay);
+      scheduler.schedule(delayRunnable, recurringDelay, 
+                         TaskPriority.High);
     }
 
     @Override
@@ -322,6 +419,11 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
     @Override
     public FutureFuture<?> getFuture() {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public TaskPriority getPriority() {
+      return priority;
     }
 
     @Override
@@ -341,20 +443,23 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   /**
-   * Wrapper for tasks which are executed in this sub pool, 
+   * Wrapper for priority tasks which are executed in this sub pool, 
    * this ensures that handleTaskFinished() will be called 
    * after the task completes.
    * 
    * @author jent - Mike Jensen
    */
-  protected class RunnableFutureWrapper extends LimiterRunnableWrapper
-                                        implements Wrapper  {
+  protected class PriorityRunnableWrapper extends LimiterRunnableWrapper
+                                          implements Wrapper  {
+    private final TaskPriority priority;
     private final FutureFuture<?> future;
     
-    public RunnableFutureWrapper(Runnable runnable, 
-                                 FutureFuture<?> future) {
+    public PriorityRunnableWrapper(Runnable runnable, 
+                                   TaskPriority priority, 
+                                   FutureFuture<?> future) {
       super(runnable);
       
+      this.priority = priority;
       this.future = future;
     }
     
@@ -374,6 +479,11 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
     }
 
     @Override
+    public TaskPriority getPriority() {
+      return priority;
+    }
+
+    @Override
     public boolean hasFuture() {
       return future != null;
     }
@@ -390,21 +500,24 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   }
 
   /**
-   * Wrapper for tasks which are executed in this sub pool, 
+   * Wrapper for priority tasks which are executed in this sub pool, 
    * this ensures that handleTaskFinished() will be called 
    * after the task completes.
    * 
    * @author jent - Mike Jensen
    * @param <T> type for return of callable contained within wrapper
    */
-  protected class CallableFutureWrapper<T> extends LimiterCallableWrapper<T>
-                                           implements Wrapper {
+  protected class PriorityCallableWrapper<T> extends LimiterCallableWrapper<T>
+                                             implements Wrapper {
+    private final TaskPriority priority;
     private final FutureFuture<?> future;
     
-    public CallableFutureWrapper(Callable<T> callable, 
-                                 FutureFuture<?> future) {
+    public PriorityCallableWrapper(Callable<T> callable, 
+                                   TaskPriority priority, 
+                                   FutureFuture<?> future) {
       super(callable);
       
+      this.priority = priority;
       this.future = future;
     }
 
@@ -416,6 +529,11 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
     @Override
     public FutureFuture<?> getFuture() {
       return future;
+    }
+
+    @Override
+    public TaskPriority getPriority() {
+      return priority;
     }
 
     @Override
@@ -442,6 +560,7 @@ public class SimpleSchedulerLimiter extends AbstractSchedulerLimiter
   private interface Wrapper {
     public boolean isCallable();
     public FutureFuture<?> getFuture();
+    public TaskPriority getPriority();
     public boolean hasFuture();
     public Callable<?> getCallable();
     public Runnable getRunnable();

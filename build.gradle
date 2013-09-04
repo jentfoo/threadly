@@ -4,7 +4,7 @@ apply plugin: 'signing'
 apply plugin: 'checkstyle'
 
 group 'org.threadly'
-version = '0.6-SNAPSHOT'
+version = '0.7-SNAPSHOT'
 
 repositories {
   mavenCentral()
@@ -108,6 +108,11 @@ jar {
   manifest {
     attributes 'Implementation-Title': 'Threadly', 'Implementation-Version': version
   }
+}
+
+javadoc {
+  source = sourceSets.main.allJava
+  options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PUBLIC
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc) {

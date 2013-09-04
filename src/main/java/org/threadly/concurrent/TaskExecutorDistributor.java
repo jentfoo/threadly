@@ -4,9 +4,13 @@ import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
+import org.threadly.concurrent.future.ListenableFuture;
+import org.threadly.concurrent.future.ListenableFutureVirtualTask;
+import org.threadly.concurrent.future.ListenableRunnableFuture;
 import org.threadly.concurrent.lock.NativeLockFactory;
 import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.concurrent.lock.VirtualLock;
@@ -44,7 +48,7 @@ public class TaskExecutorDistributor {
    * @param maxThreadCount Max thread count (limits the qty of keys which are handled in parallel)
    */
   public TaskExecutorDistributor(int expectedParallism, int maxThreadCount) {
-    this(new PriorityScheduledExecutor(expectedParallism, 
+    this(new PriorityScheduledExecutor(Math.min(expectedParallism, maxThreadCount), 
                                        maxThreadCount, 
                                        DEFAULT_THREAD_KEEPALIVE_TIME, 
                                        TaskPriority.High, 
@@ -113,29 +117,18 @@ public class TaskExecutorDistributor {
   }
   
   /**
-   * Provide a task to be run with a given thread key.
+   * Returns an executor implementation where all tasks submitted 
+   * on this executor will run on the provided key.
    * 
    * @param threadKey object key where hashCode will be used to determine execution thread
-   * @param task Task to be executed.
+   * @return executor which will only execute based on the provided key
    */
-  public void addTask(Object threadKey, Runnable task) {
+  public Executor getExecutorForKey(Object threadKey) {
     if (threadKey == null) {
       throw new IllegalArgumentException("Must provide thread key");
-    } else if (task == null) {
-      throw new IllegalArgumentException("Must provide task");
     }
     
-    VirtualLock agentLock = sLock.getLock(threadKey);
-    synchronized (agentLock) {
-      TaskQueueWorker worker = taskWorkers.get(threadKey);
-      if (worker == null) {
-        worker = new TaskQueueWorker(threadKey, agentLock, task);
-        taskWorkers.put(threadKey, worker);
-        executor.execute(worker);
-      } else {
-        worker.add(task);
-      }
-    }
+    return new KeyBasedExecutor(threadKey);
   }
   
   /**
@@ -201,6 +194,89 @@ public class TaskExecutorDistributor {
         }
       }
     }
+  }
+  
+  /**
+   * Provide a task to be run with a given thread key.
+   * 
+   * @param threadKey object key where hashCode will be used to determine execution thread
+   * @param task Task to be executed.
+   */
+  public void addTask(Object threadKey, Runnable task) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide thread key");
+    } else if (task == null) {
+      throw new IllegalArgumentException("Must provide task");
+    }
+    
+    VirtualLock agentLock = sLock.getLock(threadKey);
+    synchronized (agentLock) {
+      TaskQueueWorker worker = taskWorkers.get(threadKey);
+      if (worker == null) {
+        worker = new TaskQueueWorker(threadKey, agentLock, task);
+        taskWorkers.put(threadKey, worker);
+        executor.execute(worker);
+      } else {
+        worker.add(task);
+      }
+    }
+  }
+  
+  /**
+   * Submit a task to be run with a given thread key.
+   * 
+   * @param threadKey object key where hashCode will be used to determine execution thread
+   * @param task Task to be executed.
+   * @return Future to represent when the execution has occurred
+   */
+  public ListenableFuture<?> submitTask(Object threadKey, Runnable task) {
+    return submitTask(threadKey, task, null);
+  }
+  
+  /**
+   * Submit a task to be run with a given thread key.
+   * 
+   * @param threadKey object key where hashCode will be used to determine execution thread
+   * @param task Runnable to be executed.
+   * @param result Result to be returned from future when task completes
+   * @return Future to represent when the execution has occurred and provide the given result
+   */
+  public <T> ListenableFuture<T> submitTask(Object threadKey, Runnable task, 
+                                            T result) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide thread key");
+    } else if (task == null) {
+      throw new IllegalArgumentException("Must provide task");
+    }
+    
+    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, result, 
+                                                                        sLock.getLock(threadKey));
+    
+    addTask(threadKey, rf);
+    
+    return rf;
+  }
+  
+  /**
+   * Submit a callable to be run with a given thread key.
+   * 
+   * @param threadKey object key where hashCode will be used to determine execution thread
+   * @param task Callable to be executed.
+   * @return Future to represent when the execution has occurred and provide the result from the callable
+   */
+  public <T> ListenableFuture<T> submitTask(Object threadKey, Callable<T> task) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide thread key");
+    } else if (task == null) {
+      throw new IllegalArgumentException("Must provide task");
+    }
+    
+    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, 
+                                                                        sLock.getLock(threadKey));
+    
+    addTask(threadKey, rf);
+    
+    return rf;
   }
   
   /**
@@ -296,6 +372,24 @@ public class TaskExecutorDistributor {
           }
         }
       }
+    }
+  }
+  
+  /**
+   * Simple executor implementation that runs on a given key.
+   * 
+   * @author jent - Mike Jensen
+   */
+  protected class KeyBasedExecutor implements Executor {
+    protected final Object threadKey;
+    
+    protected KeyBasedExecutor(Object threadKey) {
+      this.threadKey = threadKey;
+    }
+    
+    @Override
+    public void execute(Runnable command) {
+      addTask(threadKey, command);
     }
   }
 }

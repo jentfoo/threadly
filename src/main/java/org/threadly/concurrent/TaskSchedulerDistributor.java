@@ -1,5 +1,10 @@
 package org.threadly.concurrent;
 
+import java.util.concurrent.Callable;
+
+import org.threadly.concurrent.future.ListenableFuture;
+import org.threadly.concurrent.future.ListenableFutureVirtualTask;
+import org.threadly.concurrent.future.ListenableRunnableFuture;
 import org.threadly.concurrent.lock.NativeLockFactory;
 import org.threadly.concurrent.lock.StripedLock;
 
@@ -20,7 +25,7 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
    * @param maxThreadCount Max thread count (limits the qty of keys which are handled in parallel)
    */
   public TaskSchedulerDistributor(int expectedParallism, int maxThreadCount) {
-    this(new PriorityScheduledExecutor(expectedParallism, 
+    this(new PriorityScheduledExecutor(Math.min(expectedParallism, maxThreadCount), 
                                        maxThreadCount, 
                                        DEFAULT_THREAD_KEEPALIVE_TIME, 
                                        TaskPriority.High, 
@@ -66,9 +71,25 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
     
     this.scheduler = scheduler;
   }
+  
+  /**
+   * Returns a scheduler implementation where all tasks submitted 
+   * on this scheduler will run on the provided key.
+   * 
+   * @param threadKey object key where hashCode will be used to determine execution thread
+   * @return scheduler which will only execute based on the provided key
+   */
+  public SubmitterSchedulerInterface getSubmitterSchedulerForKey(Object threadKey) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide thread key");
+    }
+    
+    return new KeyBasedScheduler(threadKey);
+  }
 
   /**
-   * Schedule a task with a given delay.
+   * Schedule a one time task with a given delay that will not run concurrently 
+   * based off the thread key.
    * 
    * @param threadKey object key where hashCode will be used to determine execution thread
    * @param task Task to execute
@@ -85,13 +106,18 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
       throw new IllegalArgumentException("delayInMs must be >= 0");
     }
     
-    scheduler.schedule(new AddTask(threadKey, task), 
-                       delayInMs);
+    if (delayInMs == 0) {
+      addTask(threadKey, task);
+    } else {
+      scheduler.schedule(new AddTask(threadKey, task), 
+                         delayInMs);
+    }
   }
   
   /**
    * Schedule a recurring task to run.  The recurring delay time will be
-   * from the point where execution finished.
+   * from the point where execution finished.  This task will not run concurrently 
+   * based off the thread key.
    * 
    * @param threadKey object key where hashCode will be used to determine execution thread
    * @param task Task to be executed.
@@ -117,17 +143,142 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
                                                     recurringDelay)), 
                        initialDelay);
   }
+
+  /**
+   * Submit a task to run as soon as possible.  There is a 
+   * slight increase in load when using submit over execute.  
+   * So this should only be used when the future is necessary.
+   * 
+   * The future .get() method will return null once the runnable has completed.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task runnable to be executed
+   * @return a future to know when the task has completed
+   */
+  public ListenableFuture<?> submit(Object threadKey, Runnable task) {
+    return submit(threadKey, task, null);
+  }
+
+  /**
+   * Submit a task to run as soon as possible.  There is a 
+   * slight increase in load when using submit over execute.  
+   * So this should only be used when the future is necessary.
+   * 
+   * The future .get() method will return null once the runnable has completed.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task runnable to be executed
+   * @param result result to be returned from resulting future .get() when runnable completes
+   * @return a future to know when the task has completed
+   */
+  public <T> ListenableFuture<T> submit(Object threadKey, Runnable task, T result) {
+    return submitScheduled(threadKey, task, result, 0);
+  }
+
+  /**
+   * Submit a {@link Callable} to run as soon as possible for a given key.  
+   * This is needed when a result needs to be consumed from the callable.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task callable to be executed
+   * @return a future to know when the task has completed and get the result of the callable
+   */
+  public <T> ListenableFuture<T> submit(Object threadKey, Callable<T> task) {
+    return submitScheduled(threadKey, task, 0);
+  }
+
+  /**
+   * Schedule a task with a given delay.  There is a slight 
+   * increase in load when using submitScheduled over schedule.  So 
+   * this should only be used when the future is necessary.
+   * 
+   * The future .get() method will return null once the runnable has completed.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task runnable to execute
+   * @param delayInMs time in milliseconds to wait to execute task
+   * @return a future to know when the task has completed
+   */
+  public ListenableFuture<?> submitScheduled(Object threadKey, Runnable task, long delayInMs) {
+    return submitScheduled(threadKey, task, null, delayInMs);
+  }
+
+  /**
+   * Schedule a task with a given delay.  There is a slight 
+   * increase in load when using submitScheduled over schedule.  So 
+   * this should only be used when the future is necessary.
+   * 
+   * The future .get() method will return null once the runnable has completed.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task runnable to execute
+   * @param result result to be returned from resulting future .get() when runnable completes
+   * @param delayInMs time in milliseconds to wait to execute task
+   * @return a future to know when the task has completed
+   */
+  public <T> ListenableFuture<T> submitScheduled(Object threadKey, Runnable task, T result, long delayInMs) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide a threadKey");
+    } else if (task == null) {
+      throw new IllegalArgumentException("Must provide a task");
+    } else if (delayInMs < 0) {
+      throw new IllegalArgumentException("delayInMs must be >= 0");
+    }
+
+    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, result, 
+                                                                        sLock.getLock(threadKey));
+    
+    if (delayInMs == 0) {
+      addTask(threadKey, rf);
+    } else {
+      scheduler.schedule(new AddTask(threadKey, rf), 
+                         delayInMs);
+    }
+    
+    return rf;
+  }
+
+  /**
+   * Schedule a {@link Callable} with a given delay.  This is 
+   * needed when a result needs to be consumed from the 
+   * callable.
+   * 
+   * @param threadKey key which hash will be used to determine which thread to run
+   * @param task callable to be executed
+   * @param delayInMs time in milliseconds to wait to execute task
+   * @return a future to know when the task has completed and get the result of the callable
+   */
+  public <T> ListenableFuture<T> submitScheduled(Object threadKey, Callable<T> task, long delayInMs) {
+    if (threadKey == null) {
+      throw new IllegalArgumentException("Must provide a threadKey");
+    } else if (task == null) {
+      throw new IllegalArgumentException("Must provide a task");
+    } else if (delayInMs < 0) {
+      throw new IllegalArgumentException("delayInMs must be >= 0");
+    }
+
+    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, sLock.getLock(threadKey));
+    
+    if (delayInMs == 0) {
+      addTask(threadKey, rf);
+    } else {
+      scheduler.schedule(new AddTask(threadKey, rf), 
+                         delayInMs);
+    }
+    
+    return rf;
+  }
   
   /**
    * Task which will run delayed to add a task into the queue when ready.
    * 
    * @author jent - Mike Jensen
    */
-  private class AddTask extends VirtualRunnable {
+  protected class AddTask extends VirtualRunnable {
     private final Object key;
     private final Runnable task;
     
-    private AddTask(Object key, Runnable task) {
+    protected AddTask(Object key, Runnable task) {
       this.key = key;
       this.task = task;
     }
@@ -143,16 +294,17 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
    * 
    * @author jent - Mike Jensen
    */
-  private class RecrringTask extends VirtualRunnable {
+  protected class RecrringTask extends VirtualRunnable {
     private final Object key;
     private final Runnable task;
     private final long recurringDelay;
     
-    private RecrringTask(Object key, Runnable task, long recurringDelay) {
+    protected RecrringTask(Object key, Runnable task, long recurringDelay) {
       this.key = key;
       this.task = task;
       this.recurringDelay = recurringDelay;
     }
+    
     @Override
     public void run() {
       try {
@@ -167,6 +319,66 @@ public class TaskSchedulerDistributor extends TaskExecutorDistributor {
         }
       }
     }
-    
+  }
+  
+  /**
+   * Simple simple scheduler implementation that runs all executions and 
+   * scheduling on a given key.
+   * 
+   * @author jent - Mike Jensen
+   */
+  protected class KeyBasedScheduler extends KeyBasedExecutor 
+                                    implements SubmitterSchedulerInterface {
+    protected KeyBasedScheduler(Object threadKey) {
+      super(threadKey);
+    }
+
+    @Override
+    public void schedule(Runnable task, long delayInMs) {
+      TaskSchedulerDistributor.this.schedule(threadKey, task, 
+                                             delayInMs);
+    }
+
+    @Override
+    public void scheduleWithFixedDelay(Runnable task, long initialDelay, long recurringDelay) {
+      TaskSchedulerDistributor.this.scheduleWithFixedDelay(threadKey, task, 
+                                                           initialDelay, 
+                                                           recurringDelay);
+    }
+
+    @Override
+    public ListenableFuture<?> submit(Runnable task) {
+      return submit(task, null);
+    }
+
+    @Override
+    public <T> ListenableFuture<T> submit(Runnable task, T result) {
+      return submitScheduled(task, result, 0);
+    }
+
+    @Override
+    public <T> ListenableFuture<T> submit(Callable<T> task) {
+      return submitScheduled(task, 0);
+    }
+
+    @Override
+    public ListenableFuture<?> submitScheduled(Runnable task, long delayInMs) {
+      return submitScheduled(task, null, delayInMs);
+    }
+
+    @Override
+    public <T> ListenableFuture<T> submitScheduled(Runnable task, T result, long delayInMs) {
+      return TaskSchedulerDistributor.this.submitScheduled(threadKey, task, result, delayInMs);
+    }
+
+    @Override
+    public <T> ListenableFuture<T> submitScheduled(Callable<T> task, long delayInMs) {
+      return TaskSchedulerDistributor.this.submitScheduled(threadKey, task, delayInMs);
+    }
+
+    @Override
+    public boolean isShutdown() {
+      return scheduler.isShutdown();
+    }
   }
 }

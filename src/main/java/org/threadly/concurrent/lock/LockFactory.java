@@ -13,4 +13,12 @@ public interface LockFactory {
    * @return new {@link VirtualLock}
    */
   public VirtualLock makeLock();
+  
+  /**
+   * Call to check if the lock factory produces blocking native locks.  
+   * Or if it defaults to a test implementation.
+   * 
+   * @return true if the factory builds native/blocking locks
+   */
+  public boolean isNativeLockFactory();
 }

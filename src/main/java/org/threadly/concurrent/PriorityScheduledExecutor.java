@@ -2,28 +2,27 @@ package org.threadly.concurrent;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
+import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.Delayed;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.threadly.concurrent.BlockingQueueConsumer.ConsumerAcceptor;
 import org.threadly.concurrent.collections.DynamicDelayQueue;
 import org.threadly.concurrent.collections.DynamicDelayedUpdater;
+import org.threadly.concurrent.future.ListenableFuture;
+import org.threadly.concurrent.future.ListenableFutureTask;
+import org.threadly.concurrent.future.ListenableRunnableFuture;
+import org.threadly.concurrent.limiter.PrioritySchedulerLimiter;
 import org.threadly.concurrent.lock.LockFactory;
 import org.threadly.concurrent.lock.NativeLock;
 import org.threadly.concurrent.lock.VirtualLock;
-import org.threadly.util.ExceptionUtils;
 
 /**
  * Executor to run tasks, schedule tasks.  
@@ -390,26 +389,34 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
     return ! running;
   }
   
-  protected void clearTaskQueue() {
+  protected List<Runnable> clearTaskQueue() {
     synchronized (highPriorityLock) {
       synchronized (lowPriorityLock) {
         highPriorityConsumer.stop();
         lowPriorityConsumer.stop();
+        List<Runnable> removedTasks = new ArrayList<Runnable>(highPriorityQueue.size() + 
+                                                                lowPriorityQueue.size());
         
         synchronized (highPriorityQueue.getLock()) {
           Iterator<TaskWrapper> it = highPriorityQueue.iterator();
           while (it.hasNext()) {
-            it.next().cancel();
+            TaskWrapper tw = it.next();
+            tw.cancel();
+            removedTasks.add(tw.task);
           }
           lowPriorityQueue.clear();
         }
         synchronized (lowPriorityQueue.getLock()) {
           Iterator<TaskWrapper> it = lowPriorityQueue.iterator();
           while (it.hasNext()) {
-            it.next().cancel();
+            TaskWrapper tw = it.next();
+            tw.cancel();
+            removedTasks.add(tw.task);
           }
           lowPriorityQueue.clear();
         }
+        
+        return removedTasks;
       }
     }
   }
@@ -425,12 +432,25 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
   }
 
   /**
-   * Stops any tasks from continuing to run and destroys all worker threads.
+   * Stops any new tasks from running and removes workers from the pool.
+   * 
+   * This is different from the implementation in java.util.concurrent.ExecutorService.  
+   * In ExecutorService it allows any scheduled or submitted task to execute, and just 
+   * refuses new submissions.
+   * 
+   * This implementation refuses new submissions after this call.  And will NOT interrupt any 
+   * tasks which are currently running.  But any tasks which are waiting in queue to be run 
+   * (but have not started yet), will not be run.  Those waiting tasks will be removed, and 
+   * as workers finish with their current tasks the threads will be joined.
+   * 
+   * @return List of runnables which were waiting to execute
    */
-  public void shutdown() {
+  public List<Runnable> shutdown() {
     running = false;
-    clearTaskQueue();
+    List<Runnable> awaitingTasks = clearTaskQueue();
     shutdownAllWorkers();
+    
+    return awaitingTasks;
   }
   
   protected void verifyNotShutdown() {
@@ -581,13 +601,10 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
       priority = defaultPriority;
     }
 
-    OneTimeFutureTaskWrapper<T> otftw = new OneTimeFutureTaskWrapper<T>(task, result, 
-                                                                        priority, 
-                                                                        delayInMs, 
-                                                                        makeLock());
-    addToQueue(otftw);
+    ListenableRunnableFuture<T> rf = new ListenableFutureTask<T>(false, task, result);
+    addToQueue(new OneTimeTaskWrapper(rf, priority, delayInMs));
     
-    return otftw;
+    return rf;
   }
 
   @Override
@@ -607,13 +624,10 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
       priority = defaultPriority;
     }
 
-    OneTimeFutureTaskWrapper<T> otftw = new OneTimeFutureTaskWrapper<T>(task, 
-                                                                        priority, 
-                                                                        delayInMs, 
-                                                                        makeLock());
-    addToQueue(otftw);
+    ListenableRunnableFuture<T> rf = new ListenableFutureTask<T>(false, task);
+    addToQueue(new OneTimeTaskWrapper(rf, priority, delayInMs));
     
-    return otftw;
+    return rf;
   }
 
   @Override
@@ -817,6 +831,11 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
     return new NativeLock();
   }
   
+  @Override
+  public boolean isNativeLockFactory() {
+    return true;
+  }
+  
   /**
    * Runnable which will consume tasks from the appropriate 
    * and given the provided implementation to get a worker 
@@ -978,6 +997,10 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
     
     public void cancel() {
       canceled = true;
+      
+      if (task instanceof Future<?>) {
+        ((Future<?>)task).cancel(false);
+      }
     }
     
     public abstract void executing();
@@ -1040,206 +1063,6 @@ public class PriorityScheduledExecutor implements PrioritySchedulerInterface,
     public void run() {
       if (! canceled) {
         task.run();
-      }
-    }
-  }
-  
-  /**
-   * Wrapper for tasks which only executes once, and also implements 
-   * the {@link ListenableFuture} interface.
-   * 
-   * @author jent - Mike Jensen
-   */
-  protected static class OneTimeFutureTaskWrapper<T> extends OneTimeTaskWrapper 
-                                                     implements ListenableFuture<T> {
-    protected final Map<Runnable, Executor> listeners;
-    private final Callable<T> callable;
-    private final VirtualLock lock;
-    private final T runnableResult;
-    private boolean started;
-    private boolean done;
-    private Exception failure;
-    private T result;
-    
-    protected OneTimeFutureTaskWrapper(Runnable task, T runnableResult, 
-                                       TaskPriority priority,
-                                       long delay, VirtualLock lock) {
-      super(task, priority, delay);
-      
-      listeners = new HashMap<Runnable, Executor>();
-      callable = null;
-      this.lock = lock;
-      this.runnableResult = runnableResult;
-      started = false;
-      done = false;
-      failure = null;
-      result = null;
-    }
-
-    protected OneTimeFutureTaskWrapper(Callable<T> callable, TaskPriority priority,
-                                       long delay, VirtualLock lock) {
-      super(null, priority, delay);
-      
-      listeners = new HashMap<Runnable, Executor>();
-      this.callable = callable;
-      this.lock = lock;
-      this.runnableResult = null;
-      started = false;
-      done = false;
-      failure = null;
-      result = null;
-    }
-
-    @Override
-    public void run() {
-      try {
-        boolean shouldRun = false;
-        synchronized (lock) {
-          if (! canceled) {
-            started = true;
-            shouldRun = true;
-          }
-        }
-        
-        if (shouldRun) {
-          if (task != null) {
-            task.run();
-            result = runnableResult;
-          } else {
-            result = callable.call();
-          }
-        }
-        
-        synchronized (lock) {
-          done = true;
-        
-          callListeners();
-          
-          lock.signalAll();
-        }
-      } catch (Exception e) {
-        synchronized (lock) {
-          done = true;
-          failure = e;
-        
-          callListeners();
-        
-          lock.signalAll();
-        }
-        
-        throw ExceptionUtils.makeRuntime(e);
-      }
-    }
-
-    @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
-      synchronized (lock) {
-        canceled = true;
-        
-        callListeners();
-        
-        lock.signalAll();
-      
-        return ! started;
-      }
-    }
-    
-    private void callListeners() {
-      synchronized (lock) {
-        Iterator<Entry<Runnable, Executor>> it = listeners.entrySet().iterator();
-        while (it.hasNext()) {
-          Entry<Runnable, Executor> listener = it.next();
-          runListener(listener.getKey(), listener.getValue(), false);
-        }
-        
-        listeners.clear();
-      }
-    }
-
-    @Override
-    public boolean isDone() {
-      synchronized (lock) {
-        return done;
-      }
-    }
-
-    @Override
-    public boolean isCancelled() {
-      synchronized (lock) {
-        return canceled && ! started;
-      }
-    }
-
-    @Override
-    public T get() throws InterruptedException, ExecutionException {
-      try {
-        return get(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
-      } catch (TimeoutException e) {
-        // basically impossible
-        throw ExceptionUtils.makeRuntime(e);
-      }
-    }
-
-    @Override
-    public T get(long timeout, TimeUnit unit) throws InterruptedException,
-                                                     ExecutionException,
-                                                     TimeoutException {
-      long startTime = ClockWrapper.getAccurateTime();
-      long timeoutInMs = TimeUnit.MILLISECONDS.convert(timeout, unit);
-      synchronized (lock) {
-        long waitTime = timeoutInMs - (ClockWrapper.getAccurateTime() - startTime);
-        while (! done && waitTime > 0) {
-          lock.await(waitTime);
-          waitTime = timeoutInMs - (ClockWrapper.getAccurateTime() - startTime);
-        }
-        
-        if (canceled) {
-          throw new CancellationException();
-        } else if (failure != null) {
-          throw new ExecutionException(failure);
-        } else if (! done) {
-          throw new TimeoutException();
-        }
-        
-        return result;
-      }
-    }
-    
-    private void runListener(Runnable listener, Executor executor, 
-                             boolean throwException) {
-      if (executor != null) {
-        executor.execute(listener);
-      } else {
-        try {
-          listener.run();
-        } catch (RuntimeException e) {
-          if (throwException) {
-            throw e;
-          } else {
-            UncaughtExceptionHandler handler = Thread.getDefaultUncaughtExceptionHandler();
-            if (handler != null) {
-              handler.uncaughtException(Thread.currentThread(), e);
-            } else {
-              e.printStackTrace();
-            }
-          }
-        }
-      }
-    }
-
-    @Override
-    public void addListener(Runnable listener) {
-      addListener(listener, null);
-    }
-
-    @Override
-    public void addListener(Runnable listener, Executor executor) {
-      synchronized (lock) {
-        if (done || canceled) {
-          runListener(listener, executor, true);
-        } else {
-          listeners.put(listener, executor);
-        }
       }
     }
   }

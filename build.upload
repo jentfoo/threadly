@@ -4,13 +4,17 @@ apply plugin: 'signing'
 apply plugin: 'checkstyle'
 
 group 'org.threadly'
-version = '0.6-SNAPSHOT'
+version = '0.7-SNAPSHOT'
 
 sourceCompatibility = 1.6
 targetCompatibility = 1.6
 
 repositories {
   mavenCentral()
+}
+
+dependencies {
+  testCompile group: 'junit', name: 'junit', version: '4.+'
 }
 
 tasks.withType(Compile) {
@@ -21,10 +25,6 @@ plugins.withType(JavaPlugin) {
   checkstyle.sourceSets = [sourceSets.main]
 }
 
-dependencies {
-  testCompile group: 'junit', name: 'junit', version: '4.+'
-}
-
 test {
   testResultsDir = file("$buildDir/test-results/xml")
 }
@@ -33,6 +33,11 @@ jar {
   manifest {
     attributes 'Implementation-Title': 'Threadly', 'Implementation-Version': version
   }
+}
+
+javadoc {
+  source = sourceSets.main.allJava
+  options.memberLevel = org.gradle.external.javadoc.JavadocMemberLevel.PUBLIC
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc) {
