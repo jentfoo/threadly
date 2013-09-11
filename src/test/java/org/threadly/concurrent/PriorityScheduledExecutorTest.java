@@ -12,7 +12,6 @@ import org.junit.Test;
 import org.threadly.concurrent.PriorityScheduledExecutor.OneTimeTaskWrapper;
 import org.threadly.concurrent.PriorityScheduledExecutor.Worker;
 import org.threadly.concurrent.SubmitterSchedulerInterfaceTest.SubmitterSchedulerFactory;
-import org.threadly.concurrent.SubmitterSchedulerInterfaceTest.TestCallable;
 import org.threadly.concurrent.limiter.PrioritySchedulerLimiter;
 import org.threadly.test.concurrent.TestRunnable;
 import org.threadly.test.concurrent.TestUtils;
@@ -687,6 +686,44 @@ public class PriorityScheduledExecutorTest {
   }
   
   @Test
+  public void shutdownNowTest() {
+    shutdownNowTest(new PriorityScheduledExecutorTestFactory());
+  }
+  
+  public static void shutdownNowTest(PriorityScheduledExecutorFactory factory) {
+    try {
+      PriorityScheduledExecutor scheduler = factory.make(1, 1, 1000);
+      
+      scheduler.shutdownNow();
+      
+      assertTrue(scheduler.isShutdown());
+      
+      try {
+        scheduler.execute(new TestRunnable());
+        fail("Execption should have been thrown");
+      } catch (IllegalStateException e) {
+        // expected
+      }
+      
+      try {
+        scheduler.schedule(new TestRunnable(), 1000);
+        fail("Execption should have been thrown");
+      } catch (IllegalStateException e) {
+        // expected
+      }
+      
+      try {
+        scheduler.scheduleWithFixedDelay(new TestRunnable(), 100, 100);
+        fail("Execption should have been thrown");
+      } catch (IllegalStateException e) {
+        // expected
+      }
+    } finally {
+      factory.shutdown();
+    }
+  }
+  
+  @Test
   public void addToQueueTest() {
     addToQueueTest(new PriorityScheduledExecutorTestFactory());
   }
@@ -872,7 +909,7 @@ public class PriorityScheduledExecutorTest {
     public void shutdown() {
       Iterator<PriorityScheduledExecutor> it = executors.iterator();
       while (it.hasNext()) {
-        it.next().shutdown();
+        it.next().shutdownNow();
       }
     }
   }
@@ -910,7 +947,7 @@ public class PriorityScheduledExecutorTest {
     public void shutdown() {
       Iterator<PriorityScheduledExecutor> it = executors.iterator();
       while (it.hasNext()) {
-        it.next().shutdown();
+        it.next().shutdownNow();
         it.remove();
       }
     }
