@@ -1,9 +1,10 @@
 package org.threadly.concurrent.future;
 
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
-
-import org.threadly.util.ExceptionUtils;
 
 /**
  * ListenableFuture implementation which contains a parent {@link ListenableFuture}.
@@ -15,6 +16,7 @@ import org.threadly.util.ExceptionUtils;
  */
 public class FutureListenableFuture<T> extends FutureFuture<T> 
                                        implements ListenableFuture<T> {
+  private final List<WaitingListener> waitingToAddListeners;
   private ListenableFuture<?> parentFuture;
   
   /**
@@ -22,6 +24,9 @@ public class FutureListenableFuture<T> extends FutureFuture<T>
    * depend on a ListenableFuture instance to be provided later.
    */
   public FutureListenableFuture() {
+    super();
+    
+    waitingToAddListeners = new LinkedList<WaitingListener>();
     parentFuture = null;
   }
   
@@ -49,8 +54,14 @@ public class FutureListenableFuture<T> extends FutureFuture<T>
     
     synchronized (this) {
       this.parentFuture = parentFuture;
+      Iterator<WaitingListener> it = waitingToAddListeners.iterator();
+      while (it.hasNext()) {
+        WaitingListener wl = it.next();
+        parentFuture.addListener(wl.listener, wl.executor);
+      }
+      waitingToAddListeners.clear();
       
-      super.setParentFuture(parentFuture);  // parent will call this.notifyAll()
+      super.setParentFuture(parentFuture);
     }
   }
 
@@ -61,16 +72,32 @@ public class FutureListenableFuture<T> extends FutureFuture<T>
 
   @Override
   public void addListener(Runnable listener, Executor executor) {
-    synchronized (this) {
-      while (parentFuture == null) {
-        try {
-          this.wait();
-        } catch (InterruptedException e) {
-          throw ExceptionUtils.makeRuntime(e);
-        }
-      }
+    if (listener == null) {
+      throw new IllegalArgumentException("Can not provide a null listener runnable");
     }
     
-    parentFuture.addListener(listener, executor);
+    synchronized (this) {
+      if (parentFuture == null) {
+        waitingToAddListeners.add(new WaitingListener(listener, executor));
+      } else {
+        parentFuture.addListener(listener, executor);
+      }
+    }
+  }
+  
+  /**
+   * Small structure just to hold listeners that will be registered once 
+   * the parent future is provided.
+   * 
+   * @author jent - Mike Jensen
+   */
+  private class WaitingListener {
+    private final Runnable listener;
+    private final Executor executor;
+    
+    private WaitingListener(Runnable listener, Executor executor) {
+      this.listener = listener;
+      this.executor = executor;
+    }
   }
 }

@@ -17,17 +17,35 @@ import org.threadly.util.ExceptionUtils;
  * @param <T> result type returned by .get()
  */
 public class FutureFuture<T> implements Future<T> {
-  private boolean canceled;
-  private boolean mayInterruptIfRunningOnCancel;
-  private Future<?> parentFuture;
+  private volatile TaskCanceler canceler;
+  private volatile boolean canceled;
+  private volatile Future<?> parentFuture;
 
   /**
    * Constructs a new Future instance which will 
    * depend on a Future instance to be provided later.
    */
   public FutureFuture() {
+    this.canceler = null;
     canceled = false;
     parentFuture = null;
+  }
+  
+  /**
+   * Call to set a canceler for the task which this future represents.  If 
+   * this future gets a call to cancel before the parent future is set, 
+   * we will attempt to call to this canceler to cancel the task before it runs.
+   * 
+   * @param canceler canceler to call if parent future is not set
+   */
+  public void setTaskCanceler(TaskCanceler canceler) {
+    if (this.canceler != null) {
+      throw new IllegalStateException("Canceler has already been set");
+    } else if (canceler == null) {
+      throw new IllegalArgumentException("Must provide a non-null canceler");
+    }
+    
+    this.canceler = canceler;
   }
   
   /**
@@ -43,44 +61,37 @@ public class FutureFuture<T> implements Future<T> {
       throw new IllegalArgumentException("Must provide a non-null parent future");
     }
     
+    this.parentFuture = parentFuture;
     synchronized (this) {
-      this.parentFuture = parentFuture;
-      if (canceled) {
-        parentFuture.cancel(mayInterruptIfRunningOnCancel);
-      }
-      
       this.notifyAll();
     }
   }
   
   @Override
   public boolean cancel(boolean mayInterruptIfRunning) {
-    synchronized (this) {
-      canceled = true;
-      mayInterruptIfRunningOnCancel = mayInterruptIfRunning;
-      if (parentFuture != null) {
-        return parentFuture.cancel(mayInterruptIfRunning);
-      } else {
-        return true;  // this is not guaranteed to be true, but is likely
-      }
+    if (canceled) {
+      return true;
+    }
+    if (parentFuture != null) {
+      return canceled = parentFuture.cancel(mayInterruptIfRunning);
+    } else if (canceler != null) {
+      return canceled = canceler.cancel();
+    } else {
+      return false;
     }
   }
 
   @Override
   public boolean isCancelled() {
-    synchronized (this) {
-      return canceled;
-    }
+    return canceled;
   }
 
   @Override
   public boolean isDone() {
-    synchronized (this) {
-      if (parentFuture == null) {
-        return false;
-      } else {
-        return parentFuture.isDone();
-      }
+    if (parentFuture == null) {
+      return false;
+    } else {
+      return parentFuture.isDone();
     }
   }
 
@@ -113,5 +124,19 @@ public class FutureFuture<T> implements Future<T> {
       // parent future is now not null
       return (T)parentFuture.get(remainingWaitTime, TimeUnit.MILLISECONDS);
     }
+  }
+  
+  /**
+   * A canceler which this future will use if a parent future has not been set.
+   * 
+   * @author jent - Mike Jensen
+   */
+  public interface TaskCanceler {
+    /**
+     * Attempt to cancel a task before it has run.
+     * 
+     * @return true if and only if the task can be canceled before it is run
+     */
+    public boolean cancel();
   }
 }

@@ -137,8 +137,6 @@ public class ListenableFutureVirtualTask<T> extends VirtualRunnable
       
         lock.signalAll();
       }
-      
-      throw ExceptionUtils.makeRuntime(t);
     }
   }
 
@@ -192,8 +190,10 @@ public class ListenableFutureVirtualTask<T> extends VirtualRunnable
         waitTime = timeoutInMs - (Clock.accurateTime() - startTime);
       }
       
-      if (canceled) {
-        throw new CancellationException();
+      if (canceled || 
+          (failure != null && 
+            (failure == StaticCancellationException.instance() || failure instanceof CancellationException))) {
+        throw StaticCancellationException.instance();
       } else if (failure != null) {
         throw new ExecutionException(failure);
       } else if (! done) {
@@ -211,6 +211,10 @@ public class ListenableFutureVirtualTask<T> extends VirtualRunnable
 
   @Override
   public void addListener(Runnable listener, Executor executor) {
+    if (listener == null) {
+      throw new IllegalArgumentException("Can not provide a null listener runnable");
+    }
+    
     synchronized (lock) {
       if (isDone()) {
         runListener(listener, executor, true);
