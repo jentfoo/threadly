@@ -1,19 +1,19 @@
 package org.threadly.concurrent;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.threadly.concurrent.future.ListenableFuture;
-import org.threadly.concurrent.future.ListenableFutureVirtualTask;
+import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.concurrent.future.ListenableRunnableFuture;
-import org.threadly.concurrent.lock.NativeLockFactory;
-import org.threadly.concurrent.lock.StripedLock;
-import org.threadly.concurrent.lock.VirtualLock;
 import org.threadly.util.ExceptionUtils;
 
 /**
@@ -39,7 +39,6 @@ public class TaskExecutorDistributor {
   protected static final int CONCURRENT_HASH_MAP_MAX_CONCURRENCY_LEVEL = 100;
   
   protected final Executor executor;
-  protected final StripedLock sLock;
   protected final int maxTasksPerCycle;
   private final ConcurrentHashMap<Object, TaskQueueWorker> taskWorkers;
   
@@ -67,12 +66,13 @@ public class TaskExecutorDistributor {
    * @param maxTasksPerCycle maximum tasks run per key before yielding for other keys
    */
   public TaskExecutorDistributor(int expectedParallism, int maxThreadCount, int maxTasksPerCycle) {
-    this(new PriorityScheduledExecutor(Math.min(expectedParallism, maxThreadCount), 
+    this(expectedParallism, 
+         new PriorityScheduledExecutor(Math.min(expectedParallism, maxThreadCount), 
                                        maxThreadCount, 
                                        DEFAULT_THREAD_KEEPALIVE_TIME, 
                                        TaskPriority.High, 
                                        PriorityScheduledExecutor.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS), 
-         new StripedLock(expectedParallism, new NativeLockFactory()), maxTasksPerCycle);
+         maxTasksPerCycle);
   }
   
   /**
@@ -115,7 +115,7 @@ public class TaskExecutorDistributor {
   public TaskExecutorDistributor(int expectedParallism, Executor executor) {
     this(expectedParallism, executor, Integer.MAX_VALUE);
   }
-    
+  
   /**
    * Constructor to use a provided executor implementation for running tasks.
    * 
@@ -126,66 +126,21 @@ public class TaskExecutorDistributor {
    * it must copy the subset of the task queue which it can run.
    * 
    * @param expectedParallism level of expected qty of threads adding tasks in parallel
-   * @param executor A multi-threaded executor to distribute tasks to.  
-   *                 Ideally has as many possible threads as keys that 
-   *                 will be used in parallel.
+   * @param executor executor to be used for task worker execution 
    * @param maxTasksPerCycle maximum tasks run per key before yielding for other keys
    */
-  public TaskExecutorDistributor(int expectedParallism, Executor executor, 
-                                 int maxTasksPerCycle) {
-    this(executor, new StripedLock(expectedParallism, new NativeLockFactory()), 
-         maxTasksPerCycle);
-  }
-  
-  /**
-   * Constructor to be used in unit tests.  This allows you to provide a StripedLock 
-   * that provides a {@link org.threadly.test.concurrent.lock.TestableLockFactory} so 
-   * that this class can be used with the 
-   * {@link org.threadly.test.concurrent.TestablePriorityScheduler}.
-   * 
-   * @param executor executor to be used for task worker execution 
-   * @param sLock lock to be used for controlling access to workers
-   */
-  public TaskExecutorDistributor(Executor executor, StripedLock sLock) {
-    this(executor, sLock, Integer.MAX_VALUE);
-  }
-  
-  /**
-   * Constructor to be used in unit tests.  This allows you to provide a StripedLock 
-   * that provides a {@link org.threadly.test.concurrent.lock.TestableLockFactory} so 
-   * that this class can be used with the 
-   * {@link org.threadly.test.concurrent.TestablePriorityScheduler}.
-   * 
-   * This constructor allows you to provide a maximum number of tasks for a key before it 
-   * yields to another key.  This can make it more fair, and make it so no single key can 
-   * starve other keys from running.  The lower this is set however, the less efficient it 
-   * becomes in part because it has to give up the thread and get it again, but also because 
-   * it must copy the subset of the task queue which it can run.
-   * 
-   * @param executor executor to be used for task worker execution 
-   * @param sLock lock to be used for controlling access to workers
-   * @param maxTasksPerCycle maximum tasks run per key before yielding for other keys
-   */
-  public TaskExecutorDistributor(Executor executor, StripedLock sLock, 
-                                 int maxTasksPerCycle) {
+  public TaskExecutorDistributor(int expectedParallism, Executor executor, int maxTasksPerCycle) {
     if (executor == null) {
       throw new IllegalArgumentException("executor can not be null");
-    } else if (sLock == null) {
-      throw new IllegalArgumentException("striped lock must be provided");
     } else if (maxTasksPerCycle < 1) {
       throw new IllegalArgumentException("maxTasksPerCycle must be >= 1");
     }
     
     this.executor = executor;
-    this.sLock = sLock;
     this.maxTasksPerCycle = maxTasksPerCycle;
-    int mapInitialSize = Math.min(sLock.getExpectedConcurrencyLevel(), 
-                                  CONCURRENT_HASH_MAP_MAX_INITIAL_SIZE);
-    int mapConcurrencyLevel = Math.min(sLock.getExpectedConcurrencyLevel(), 
-                                       CONCURRENT_HASH_MAP_MAX_CONCURRENCY_LEVEL);
-    this.taskWorkers = new ConcurrentHashMap<Object, TaskQueueWorker>(mapInitialSize,  
+    this.taskWorkers = new ConcurrentHashMap<Object, TaskQueueWorker>(expectedParallism,  
                                                                       CONCURRENT_HASH_MAP_LOAD_FACTOR, 
-                                                                      mapConcurrencyLevel);
+                                                                      expectedParallism);
   }
   
   /**
@@ -225,16 +180,25 @@ public class TaskExecutorDistributor {
       throw new IllegalArgumentException("Must provide task");
     }
     
-    VirtualLock agentLock = sLock.getLock(threadKey);
-    synchronized (agentLock) {
-      TaskQueueWorker worker = taskWorkers.get(threadKey);
-      if (worker == null) {
-        worker = new TaskQueueWorker(threadKey, agentLock, task);
-        taskWorkers.put(threadKey, worker);
-        executor.execute(worker);
+    boolean added = false;
+    TaskQueueWorker worker = taskWorkers.get(threadKey);
+    if (worker == null) {
+      worker = new TaskQueueWorker(threadKey);
+      TaskQueueWorker existingWorker = taskWorkers.putIfAbsent(threadKey, worker);
+      if (existingWorker != null) {
+        worker = existingWorker;
       } else {
-        worker.add(task);
+        added = true;
       }
+    }
+    worker.lockForAdd();
+    try {
+      worker.add(task);
+    } finally {
+      worker.unlockFromAdd();
+    }
+    if (added) {
+      executor.execute(worker);
     }
   }
   
@@ -265,8 +229,7 @@ public class TaskExecutorDistributor {
       throw new IllegalArgumentException("Must provide task");
     }
     
-    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, result, 
-                                                                        sLock.getLock(threadKey));
+    ListenableRunnableFuture<T> rf = new ListenableFutureTask<T>(false, task, result);
     
     addTask(threadKey, rf);
     
@@ -287,8 +250,7 @@ public class TaskExecutorDistributor {
       throw new IllegalArgumentException("Must provide task");
     }
     
-    ListenableRunnableFuture<T> rf = new ListenableFutureVirtualTask<T>(task, 
-                                                                        sLock.getLock(threadKey));
+    ListenableRunnableFuture<T> rf = new ListenableFutureTask<T>(false, task);
     
     addTask(threadKey, rf);
     
@@ -301,30 +263,58 @@ public class TaskExecutorDistributor {
    * 
    * @author jent - Mike Jensen
    */
-  private class TaskQueueWorker extends VirtualRunnable {
+  private class TaskQueueWorker implements Runnable {
     private final Object mapKey;
-    private final VirtualLock agentLock;
-    private LinkedList<Runnable> queue;
+    private final AtomicInteger lockVal;  // positive when adding to queue, negative when needing to execute more
+    private volatile boolean needMoreToExecute; // true when wanting to switch queue
+    private volatile Queue<Runnable> queue;
     
-    private TaskQueueWorker(Object mapKey, 
-                            VirtualLock agentLock, 
-                            Runnable firstTask) {
+    private TaskQueueWorker(Object mapKey) {
       this.mapKey = mapKey;
-      this.agentLock = agentLock;
-      this.queue = new LinkedList<Runnable>();
-      queue.add(firstTask);
+      lockVal = new AtomicInteger();
+      needMoreToExecute = false;
+      this.queue = new ConcurrentLinkedQueue<Runnable>();
+    }
+
+    public void lockForAdd() {
+      boolean locked = false;
+      while (! locked) {
+        if (! needMoreToExecute) {  // don't try to lock while needing more to execute
+          int newVal = lockVal.incrementAndGet();
+          if (newVal > 0) {
+            locked = true;
+          }
+        }
+      }
     }
     
+    public void unlockFromAdd() {
+      lockVal.decrementAndGet();
+    }
+    
+    private void lockForNewQueue() {
+      needMoreToExecute = true;
+      while (! lockVal.compareAndSet(0, Integer.MIN_VALUE)) {
+        // spin till we can lock
+      }
+    }
+    
+    private void unlockForNewQueue() {
+      needMoreToExecute = false;
+      lockVal.set(0); // unlock for add again
+    }
+
     public void add(Runnable task) {
-      queue.addLast(task);
+      queue.add(task);
     }
     
     @Override
     public void run() {
       int consumedItems = 0;
       while (true) {
-        List<Runnable> nextList;
-        synchronized (agentLock) {
+        Collection<Runnable> nextQueue;
+        lockForNewQueue();
+        try {
           if (queue.isEmpty()) {  // nothing left to run
             taskWorkers.remove(mapKey);
             break;
@@ -332,20 +322,21 @@ public class TaskExecutorDistributor {
             if (consumedItems < maxTasksPerCycle) {
               if (queue.size() + consumedItems <= maxTasksPerCycle) {
                 // we can run the entire next queue
-                nextList = queue;
-                queue = new LinkedList<Runnable>();
+                nextQueue = queue;
+                queue = new ConcurrentLinkedQueue<Runnable>();
               } else {
                 // we need to run a subset of the queue, so copy and remove what we can run
                 int nextListSize = maxTasksPerCycle - consumedItems;
-                nextList = new ArrayList<Runnable>(nextListSize);
+                List<Runnable> nextList = new ArrayList<Runnable>(nextListSize);
                 Iterator<Runnable> it = queue.iterator();
                 do {
                   nextList.add(it.next());
                   it.remove();
                 } while (nextList.size() < nextListSize);
+                nextQueue = nextList;
               }
               
-              consumedItems += nextList.size();
+              consumedItems += nextQueue.size();
             } else {
               // re-execute this worker to give other works a chance to run
               executor.execute(this);
@@ -355,17 +346,14 @@ public class TaskExecutorDistributor {
               break;
             }
           }
+        } finally {
+          unlockForNewQueue();
         }
         
-        Iterator<Runnable> it = nextList.iterator();
+        Iterator<Runnable> it = nextQueue.iterator();
         while (it.hasNext()) {
           try {
-            Runnable next = it.next();
-            if (factory != null && next instanceof VirtualRunnable) {
-              ((VirtualRunnable)next).run(factory);
-            } else {
-              next.run();
-            }
+            it.next().run();
           } catch (Throwable t) {
             ExceptionUtils.handleException(t);
           }

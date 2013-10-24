@@ -16,9 +16,8 @@ import java.util.concurrent.locks.LockSupport;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
-import org.threadly.concurrent.lock.NativeLockFactory;
-import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.test.concurrent.TestCondition;
 import org.threadly.test.concurrent.TestRunnable;
 import org.threadly.test.concurrent.TestUtils;
@@ -39,8 +38,7 @@ public class TaskExecutorDistributorTest {
                                               1000 * 10, 
                                               TaskPriority.High, 
                                               PriorityScheduledExecutor.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS);
-    StripedLock sLock = new StripedLock(PARALLEL_LEVEL, new NativeLockFactory()); // TODO - test with testable lock
-    distributor = new TaskExecutorDistributor(scheduler, sLock);
+    distributor = new TaskExecutorDistributor(scheduler);
     ready = false;
   }
   
@@ -58,21 +56,12 @@ public class TaskExecutorDistributorTest {
     new TaskExecutorDistributor(scheduler, 1);
     new TaskExecutorDistributor(1, scheduler);
     new TaskExecutorDistributor(1, scheduler, 1);
-    StripedLock sLock = new StripedLock(1, new NativeLockFactory());
-    new TaskExecutorDistributor(scheduler, sLock);
-    new TaskExecutorDistributor(scheduler, sLock, 1);
   }
   
   @Test
   public void constructorFail() {
     try {
       new TaskExecutorDistributor(1, null);
-      fail("Exception should have been thrown");
-    } catch (IllegalArgumentException e) {
-      // expected
-    }
-    try {
-      new TaskExecutorDistributor(scheduler, null);
       fail("Exception should have been thrown");
     } catch (IllegalArgumentException e) {
       // expected
@@ -311,6 +300,7 @@ public class TaskExecutorDistributorTest {
     }
   }
 
+  @Ignore
   @Test
   public void executeStressTest() {
     final Object testLock = new Object();

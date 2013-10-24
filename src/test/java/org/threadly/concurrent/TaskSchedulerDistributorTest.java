@@ -14,9 +14,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.threadly.concurrent.SubmitterSchedulerInterfaceTest.SubmitterSchedulerFactory;
-import org.threadly.concurrent.lock.NativeLockFactory;
-import org.threadly.concurrent.lock.StripedLock;
-import org.threadly.concurrent.lock.VirtualLock;
 import org.threadly.test.concurrent.TestCondition;
 import org.threadly.test.concurrent.TestRunnable;
 
@@ -27,7 +24,6 @@ public class TaskSchedulerDistributorTest {
   
   private volatile boolean ready;
   private PriorityScheduledExecutor scheduler;
-  private VirtualLock agentLock;
   private TaskSchedulerDistributor distributor;
   
   @Before
@@ -37,9 +33,7 @@ public class TaskSchedulerDistributorTest {
                                               1000 * 10, 
                                               TaskPriority.High, 
                                               PriorityScheduledExecutor.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS);
-    StripedLock sLock = new StripedLock(1, new NativeLockFactory()); // TODO - test with testable lock
-    agentLock = sLock.getLock(null);  // there should be only one lock
-    distributor = new TaskSchedulerDistributor(scheduler, sLock);
+    distributor = new TaskSchedulerDistributor(scheduler);
     ready = false;
   }
   
@@ -47,7 +41,6 @@ public class TaskSchedulerDistributorTest {
   public void tearDown() {
     scheduler.shutdownNow();
     scheduler = null;
-    agentLock = null;
     distributor = null;
     ready = false;
   }
@@ -60,22 +53,20 @@ public class TaskSchedulerDistributorTest {
       @Override
       public void run() {
         // hold agent lock to prevent execution till ready
-        synchronized (agentLock) {
-          synchronized (testLock) {
-            for (int i = 0; i < PARALLEL_LEVEL; i++) {
-              ThreadContainer tc = new ThreadContainer();
-              TDRunnable previous = null;
-              for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
-                TDRunnable tr = new TDRunnable(tc, previous);
-                runs.add(tr);
-                ah.addTDRunnable(tc, tr);
-                
-                previous = tr;
-              }
+        synchronized (testLock) {
+          for (int i = 0; i < PARALLEL_LEVEL; i++) {
+            ThreadContainer tc = new ThreadContainer();
+            TDRunnable previous = null;
+            for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
+              TDRunnable tr = new TDRunnable(tc, previous);
+              runs.add(tr);
+              ah.addTDRunnable(tc, tr);
+              
+              previous = tr;
             }
-            
-            ready = true;
           }
+            
+          ready = true;
         }
       }
     });
@@ -100,12 +91,6 @@ public class TaskSchedulerDistributorTest {
       // expected
     }
     try {
-      new TaskSchedulerDistributor(scheduler, null);
-      fail("Exception should have been thrown");
-    } catch (IllegalArgumentException e) {
-      // expected
-    }
-    try {
       new TaskSchedulerDistributor(1, 1, -1);
       fail("Exception should have been thrown");
     } catch (IllegalArgumentException e) {
@@ -120,9 +105,6 @@ public class TaskSchedulerDistributorTest {
     new TaskSchedulerDistributor(scheduler, 1);
     new TaskSchedulerDistributor(1, scheduler);
     new TaskSchedulerDistributor(1, scheduler, 1);
-    StripedLock sLock = new StripedLock(1, new NativeLockFactory());
-    new TaskSchedulerDistributor(scheduler, sLock);
-    new TaskSchedulerDistributor(scheduler, sLock, 1);
   }
   
   @Test (expected = IllegalArgumentException.class)

@@ -8,6 +8,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.threadly.concurrent.lock.NativeLockFactory;
 import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.concurrent.lock.VirtualLock;
 
@@ -75,8 +76,8 @@ public class CallableDistributor<K, R> {
    * @param taskDistributor TaskDistributor used to execute callables
    */
   public CallableDistributor(TaskExecutorDistributor taskDistributor) {
-    this(taskDistributor, new StripedLock(taskDistributor.sLock.getExpectedConcurrencyLevel(), 
-                                          taskDistributor.sLock.getFactory()));
+    // TODO - look at use of StripedLock
+    this(taskDistributor, new StripedLock(1, new NativeLockFactory()));
   }
   
   /**
