@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.ListenableFutureTask;
@@ -193,11 +194,17 @@ public class TaskExecutorDistributor {
     }
     worker.lockForAdd();
     try {
+      // now locked, verify worker did not remove itself
+      if (worker.removed) {
+        worker.removed = false;
+        taskWorkers.put(threadKey, worker);
+        added = true;
+      }
       worker.add(task);
     } finally {
       worker.unlockFromAdd();
     }
-    if (added) {
+    if (added) {  // wait to execute till after task has been added
       executor.execute(worker);
     }
   }
@@ -266,41 +273,52 @@ public class TaskExecutorDistributor {
   private class TaskQueueWorker implements Runnable {
     private final Object mapKey;
     private final AtomicInteger lockVal;  // positive when adding to queue, negative when needing to execute more
-    private volatile boolean needMoreToExecute; // true when wanting to switch queue
+    private volatile Thread needMoreToExecute; // non-null when wanting to execute more
+    private volatile boolean removed; // should only be checked or changed around the lock condition
     private volatile Queue<Runnable> queue;
     
     private TaskQueueWorker(Object mapKey) {
       this.mapKey = mapKey;
       lockVal = new AtomicInteger();
-      needMoreToExecute = false;
+      needMoreToExecute = null;
+      removed = false;
       this.queue = new ConcurrentLinkedQueue<Runnable>();
     }
 
     public void lockForAdd() {
-      boolean locked = false;
-      while (! locked) {
-        if (! needMoreToExecute) {  // don't try to lock while needing more to execute
+      while (true) {
+        if (needMoreToExecute == null) {  // don't try to lock while needing more to execute
           int newVal = lockVal.incrementAndGet();
           if (newVal > 0) {
-            locked = true;
+            break;  // lock has now been acquired
+          } else {
+            Thread.yield();
           }
+        } else {
+          Thread.yield();
         }
       }
     }
     
     public void unlockFromAdd() {
-      lockVal.decrementAndGet();
+      int newVal = lockVal.decrementAndGet();
+      if (newVal == 0 && needMoreToExecute != null) {
+        LockSupport.unpark(needMoreToExecute);
+      }
     }
     
-    private void lockForNewQueue() {
-      needMoreToExecute = true;
+    private void lockForNewQueue() throws InterruptedException {
+      needMoreToExecute = Thread.currentThread();
       while (! lockVal.compareAndSet(0, Integer.MIN_VALUE)) {
-        // spin till we can lock
+        LockSupport.park();
+        if (needMoreToExecute.isInterrupted()) {
+          throw new InterruptedException();
+        }
       }
     }
     
     private void unlockForNewQueue() {
-      needMoreToExecute = false;
+      needMoreToExecute = null;
       lockVal.set(0); // unlock for add again
     }
 
@@ -313,9 +331,14 @@ public class TaskExecutorDistributor {
       int consumedItems = 0;
       while (true) {
         Collection<Runnable> nextQueue;
-        lockForNewQueue();
+        try {
+          lockForNewQueue();
+        } catch (InterruptedException e) {
+          return; // let thread exit
+        }
         try {
           if (queue.isEmpty()) {  // nothing left to run
+            removed = true;
             taskWorkers.remove(mapKey);
             break;
           } else {
