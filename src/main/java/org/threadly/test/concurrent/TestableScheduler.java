@@ -27,7 +27,7 @@ public class TestableScheduler extends NoThreadScheduler {
    * Constructs a new {@link TestableScheduler} scheduler.
    */
   public TestableScheduler() {
-    super(false);
+    super();
     
     nowInMillis = Clock.lastKnownTimeMillis();
   }
@@ -170,12 +170,12 @@ public class TestableScheduler extends NoThreadScheduler {
     }
     nowInMillis = currentTime;
     
-    try {
-      return super.tick(exceptionHandler);
-    } catch (InterruptedException e) {
-      // should not be possible with a false for blocking
-      Thread.currentThread().interrupt();
-      throw new RuntimeException(e);
-    }
+    return super.tick(exceptionHandler);
+  }
+  
+  @Override
+  public int blockingTick(ExceptionHandlerInterface exceptionHandler) {
+    // TODO - can we change the interface somehow so that we don't have to override this function
+    throw new UnsupportedOperationException("blockingTick is not supported in the TestableScheduler");
   }
 }
