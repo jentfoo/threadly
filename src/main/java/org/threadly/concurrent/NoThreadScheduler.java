@@ -103,6 +103,21 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
    * @return quantity of tasks run during this tick invocation
    */
   public int tick(ExceptionHandlerInterface exceptionHandler) {
+    return tick(exceptionHandler, true);
+  }
+  
+  /**
+   * Internal tick implementation.  Allowing control on if the cancelTick boolean should be reset 
+   * if no tasks are run.  Thus allowing for an optimistic attempt to run tasks, while maintaining 
+   * the cancelTick state.
+   * 
+   * @param exceptionHandler Exception handler implementation to call if any tasks throw an 
+   *                           exception, or null to have exceptions thrown out of this call
+   * @param resetCancelTickIfNoTasksRan if {@code true} will reset cancelTick weather tasks ran or 
+   *                                      not, otherwise cancelTick will only be reset if tasks ran 
+   * @return quantity of tasks run during this tick invocation
+   */
+  private int tick(ExceptionHandlerInterface exceptionHandler, boolean resetCancelTickIfNoTasksRan) {
     int tasks = 0;
     TaskContainer nextTask;
     while ((nextTask = getNextTask(true)) != null && ! cancelTick) {
@@ -120,7 +135,7 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
       tasks++;
     }
     
-    if (cancelTick) {
+    if ((tasks != 0 || resetCancelTickIfNoTasksRan) && cancelTick) {
       // reset for future tick calls
       cancelTick = false;
     }
@@ -156,31 +171,41 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
    * @throws InterruptedException thrown if thread is interrupted waiting for task to run
    */
   public int blockingTick(ExceptionHandlerInterface exceptionHandler) throws InterruptedException {
-    currentlyBlocking = true;
-    try {
-      synchronized (taskNotifyLock) {
-        /* we must check the cancelTick once we have the lock 
-         * since that is when the .notify() would happen.
-         */
-        if (cancelTick) {
-          cancelTick = false;
-          return 0;
-        }
-        TaskContainer nextTask = getNextTask(false);
-        if (nextTask == null) {
-          taskNotifyLock.wait();
-        } else {
-          long nextTaskDelay = nextTask.getDelayInMillis();
-          if (nextTaskDelay > 0) {
-            taskNotifyLock.wait(nextTaskDelay);
+    int initialTickResult = tick(exceptionHandler, false);
+    if (initialTickResult == 0) {
+      currentlyBlocking = true;
+      try {
+        synchronized (taskNotifyLock) {
+          while (true) {
+            /* we must check the cancelTick once we have the lock 
+             * since that is when the .notify() would happen.
+             */
+            if (cancelTick) {
+              cancelTick = false;
+              return 0;
+            }
+            TaskContainer nextTask = getNextTask(false);
+            if (nextTask == null) {
+              taskNotifyLock.wait();
+            } else {
+              long nextTaskDelay = nextTask.getDelayInMillis();
+              if (nextTaskDelay > 0) {
+                taskNotifyLock.wait(nextTaskDelay);
+              } else {
+                // task is ready to run, so break loop
+                break;
+              }
+            }
           }
         }
+      } finally {
+        currentlyBlocking = false;
       }
-    } finally {
-      currentlyBlocking = false;
+      
+      return tick(exceptionHandler, true);
+    } else {
+      return initialTickResult;
     }
-    
-    return tick(exceptionHandler);
   }
 
   @Override
