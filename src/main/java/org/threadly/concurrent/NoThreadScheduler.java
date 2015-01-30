@@ -20,11 +20,11 @@ import org.threadly.util.ListUtils;
  * (if you want it to run on the GUI thread).  It also can be useful in android development in a 
  * very similar way.</p>
  * 
- * <p>The tasks in this scheduler are only progressed forward with calls to {@link #tick()}.  
- * Since it is running on the calling thread, calls to {@code Object.wait()} and 
- * {@code Thread.sleep()} from sub tasks will block (possibly forever).  The call to 
- * {@link #tick(ExceptionHandlerInterface)} will not unblock till there is no more work for the 
- * scheduler to currently handle.</p>
+ * <p>The tasks in this scheduler are only progressed forward with calls to 
+ * {@link #tick(ExceptionHandlerInterface)}.  Since it is running on the calling thread, calls to 
+ * {@code Object.wait()} and {@code Thread.sleep()} from sub tasks will block (possibly forever).  
+ * The call to {@link #tick(ExceptionHandlerInterface)} will not unblock till there is no more 
+ * work for the scheduler to currently handle.</p>
  * 
  * @author jent - Mike Jensen
  * @since 2.0.0
@@ -44,7 +44,7 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
   /**
    * Constructs a new {@link NoThreadScheduler} scheduler.
    * 
-   * @param tickBlocksTillAvailable {@code true} if calls to {@link #tick()} should block till there is something to run
+   * @param tickBlocksTillAvailable {@code true} if tick invokations should block till there is something to run
    */
   public NoThreadScheduler(boolean tickBlocksTillAvailable) {
     this.tickBlocksTillAvailable = tickBlocksTillAvailable;
@@ -66,11 +66,12 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
   }
   
   /**
-   * Call to cancel current or the next tick call.  If currently in a {@link #tick()} call 
-   * (weather blocking waiting for tasks, or currently running tasks), this will call the 
-   * {@link #tick()} to return.  If a task is currently running it will finish the current task 
-   * before returning.  If not currently in a {@link #tick()} call, the next tick call will return 
-   * immediately without running anything.
+   * Call to cancel current or the next tick call.  If currently in a 
+   * {@link #tick(ExceptionHandlerInterface)} call (weather blocking waiting for tasks, or 
+   * currently running tasks), this will call the {@link #tick(ExceptionHandlerInterface)} to 
+   * return.  If a task is currently running it will finish the current task before returning.  If 
+   * not currently in a {@link #tick(ExceptionHandlerInterface)} call, the next tick call will 
+   * return immediately without running anything.
    */
   public void cancelTick() {
     cancelTick = true;
@@ -81,38 +82,10 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
   /**
    * Progresses tasks for the current time.  This will block as it runs as many scheduled or 
    * waiting tasks as possible.  It is CRITICAL that only one thread at a time calls the 
-   * {@link #tick()} function.  While this class is in general thread safe, if multiple threads 
-   * call {@link #tick()} at the same time, it is possible a given task may run more than once.  
-   * In order to maintain high performance, threadly does not guard against this condition.
-   * 
-   * Depending on how this class was constructed, this may or may not block if there are no tasks 
-   * to run yet.
-   * 
-   * If any tasks throw a {@link RuntimeException}, they will be bubbled up to this tick call.  
-   * Any tasks past that task will not run till the next call to tick.  So it is important that 
-   * the implementor handle those exceptions.  
-   * 
-   * This call is NOT thread safe, calling tick in parallel could cause the same task to be run 
-   * multiple times in parallel.
-   * 
-   * @deprecated please use {@link #tick(ExceptionHandlerInterface)}, providing null for the 
-   *               {@link ExceptionHandlerInterface}.  This will be removed in 4.0.0
-   * 
-   * @return quantity of tasks run during this tick invocation
-   * @throws InterruptedException thrown if thread is interrupted waiting for task to run
-   *           (this can only throw if constructed with a {@code true} to allow blocking)
-   */
-  @Deprecated
-  public int tick() throws InterruptedException {
-    return tick(null);
-  }
-  
-  /**
-   * Progresses tasks for the current time.  This will block as it runs as many scheduled or 
-   * waiting tasks as possible.  It is CRITICAL that only one thread at a time calls the 
-   * {@link #tick()} function.  While this class is in general thread safe, if multiple threads 
-   * call {@link #tick()} at the same time, it is possible a given task may run more than once.  
-   * In order to maintain high performance, threadly does not guard against this condition.
+   * {@link #tick(ExceptionHandlerInterface)} function.  While this class is in general thread 
+   * safe, if multiple threads call {@link #tick(ExceptionHandlerInterface)} at the same time, it 
+   * is possible a given task may run more than once.  In order to maintain high performance, 
+   * threadly does not guard against this condition.
    * 
    * Depending on how this class was constructed, this may or may not block if there are no tasks 
    * to run yet.
@@ -378,8 +351,8 @@ public class NoThreadScheduler extends AbstractSubmitterScheduler
   
   /**
    * Removes any tasks waiting to be run.  Will not interrupt any tasks currently running if 
-   * {@link #tick()} is being called.  But will avoid additional tasks from being run on the 
-   * current {@link #tick()} call.
+   * {@link #tick(ExceptionHandlerInterface)} is being called.  But will avoid additional tasks 
+   * from being run on the current {@link #tick(ExceptionHandlerInterface)} call.
    * 
    * @return List of runnables which were waiting in the task queue to be executed (and were now removed)
    */

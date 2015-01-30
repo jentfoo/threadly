@@ -64,25 +64,6 @@ public class NoThreadSchedulerTest {
   }
   
   @Test
-  public void tickThrowsRuntimeExceptionTest() {
-    tickThrowsRuntimeExceptionTest(blockingScheduler);
-    tickThrowsRuntimeExceptionTest(nonblockingScheduler);
-  }
-  
-  @SuppressWarnings("deprecation")
-  private static void tickThrowsRuntimeExceptionTest(NoThreadScheduler scheduler) {
-    RuntimeException failure = new RuntimeException();
-    scheduler.execute(new TestRuntimeFailureRunnable(failure));
-    
-    try {
-      scheduler.tick();
-      fail("Exception should have thrown");
-    } catch (Exception e) {
-      assertTrue(e == failure);
-    }
-  }
-  
-  @Test
   public void tickWithoutHandlerThrowsRuntimeExceptionTest() {
     tickWithoutHandlerThrowsRuntimeExceptionTest(blockingScheduler);
     tickWithoutHandlerThrowsRuntimeExceptionTest(nonblockingScheduler);
