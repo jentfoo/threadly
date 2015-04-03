@@ -1,6 +1,7 @@
 package org.threadly.concurrent;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -8,15 +9,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.threadly.util.Clock;
 
-@SuppressWarnings("javadoc")
-public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
-  public static final DelayedTask empty_dt = new DelayedTask(new Runnable() {
+public class LCWSubmitterScheduler extends AbstractSubmitterScheduler {
+  private static final DelayedTask EMPTY_TASK = new DelayedTask(new Runnable() {
     @Override
     public void run() {
-      //
+      // no-op, just used to wake up queue
     }
-  }
-  );
+  });
+  
   private final Thread[] threads;
   private final AtomicBoolean doingSchedule = new AtomicBoolean(false);
   private final LinkedBlockingDeque<DelayedTask> queue = new LinkedBlockingDeque<DelayedTask>();
@@ -37,13 +37,15 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
   
   @Override
   public void scheduleWithFixedDelay(Runnable task, long initialDelay, long recurringDelay) {
-    DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis()+initialDelay, recurringDelay, true, true);
+    DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis() + initialDelay, 
+                                     recurringDelay, true, true);
     addToDelayQueue(dt);
   }
 
   @Override
   public void scheduleAtFixedRate(Runnable task, long initialDelay, long period) {
-    DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis()+initialDelay, period, true, false);
+    DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis() + initialDelay, 
+                                     period, true, false);
     addToDelayQueue(dt);
   }
 
@@ -52,27 +54,38 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
     if(delayInMillis <= 0L ) {
       queue.add(new DelayedTask(task));
     } else {
-      DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis()+delayInMillis, delayInMillis, false, false);
+      DelayedTask dt = new DelayedTask(task, Clock.accurateForwardProgressingMillis() + delayInMillis, 
+                                       delayInMillis, false, false);
       addToDelayQueue(dt);
     }
+  }
+
+  public void shutdown() {
+    // TODO Auto-generated method stub
+    
+  }
+
+  public List<Runnable> shutdownNow() {
+    // TODO Auto-generated method stub
+    return null;
   }
   
   private void addToDelayQueue(DelayedTask dt) {
     synchronized(delayQueue) {
       int size = delayQueue.size();
-      if( size == 0) {
+      if (size == 0) {
         delayQueue.add(dt);
         delayQueueSize.incrementAndGet();
-        queue.add(empty_dt);
+        queue.add(EMPTY_TASK);
         return;
-      } else if(dt.execTime >= delayQueue.get(size - 1).execTime) {
+      } else if (dt.execTime >= delayQueue.get(size - 1).execTime) {
         delayQueue.add(dt);
         delayQueueSize.incrementAndGet();
         return;
       } else if (dt.execTime <= delayQueue.get(0).execTime){
         delayQueue.add(0, dt);
         delayQueueSize.incrementAndGet();
-        queue.add(empty_dt);
+        queue.add(EMPTY_TASK);
         return;
       } else {
         int max = size-1;
@@ -96,22 +109,20 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
             return;
           }
         }
-        
       }
     }
   }
   
   private void processScheduled() {
     synchronized(delayQueue) {
-      while(delayQueue.size() > 0 && delayQueue.get(0).execTime - Clock.accurateForwardProgressingMillis()  <= 0) {
+      while (delayQueue.size() > 0 && delayQueue.get(0).getDelay(TimeUnit.MILLISECONDS) <= 0) {
         delayQueueSize.decrementAndGet();
         DelayedTask dt = delayQueue.remove(0);
         queue.add(dt);
-        if(dt.recurring && !dt.fixedDelay) {
-          dt.execTime = Clock.accurateForwardProgressingMillis()+dt.delay;
+        if (dt.recurring && ! dt.fixedDelay) {
+          dt.execTime = Clock.accurateForwardProgressingMillis() + dt.delay;
           addToDelayQueue(dt);
         }
-        
       }
     }
   }
@@ -119,7 +130,7 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
   private long getNextDelayedTime() {
     synchronized(delayQueue) {
       if(delayQueueSize.get() > 0) {
-        return delayQueue.get(0).execTime - Clock.accurateForwardProgressingMillis();
+        return delayQueue.get(0).getDelay(TimeUnit.MILLISECONDS);
       } else {
         return 5000;
       }
@@ -132,31 +143,32 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
       while(running) {
         try {
           long delayMillis = getNextDelayedTime();
-          if(delayMillis <= 0 && doingSchedule.compareAndSet(false, true)) {
+          if (delayMillis <= 0 && doingSchedule.compareAndSet(false, true)) {
             processScheduled();
             doingSchedule.set(false);
             delayMillis = getNextDelayedTime();
           }
           DelayedTask dt = queue.pollFirst(delayMillis, TimeUnit.MILLISECONDS);
-          if(dt != null) {
+          if (dt != null) {
             try {
               dt.runner.run();
             }catch (Exception e) {
               e.printStackTrace();
             }
-            if(dt.recurring && dt.fixedDelay) {
+            if (dt.recurring && dt.fixedDelay) {
               dt.execTime = Clock.accurateForwardProgressingMillis()+dt.delay;
               addToDelayQueue(dt);
             }
           }
         } catch(Exception e) {
+          // TODO - handle exception better
           e.printStackTrace();
         }
       }
     }
   }
   
-  private static class DelayedTask {
+  private static class DelayedTask extends AbstractDelayed {
     final Runnable runner;
     long execTime;
     long delay;
@@ -166,12 +178,18 @@ public class LCWSubmitterScheduler extends AbstractSubmitterScheduler{
     public DelayedTask(Runnable runner) {
       this.runner = runner;
     }
+    
     public DelayedTask(Runnable runner, long execTime, long delay, boolean recurring, boolean fixedDelay) {
       this.runner = runner;
       this.execTime = execTime;
       this.delay = delay;
       this.recurring = recurring;
       this.fixedDelay = fixedDelay;
+    }
+
+    @Override
+    public long getDelay(TimeUnit unit) {
+      return unit.convert(execTime - ClockWrapper.getSemiAccurateMillis(), TimeUnit.MILLISECONDS);
     }
   }
 }
