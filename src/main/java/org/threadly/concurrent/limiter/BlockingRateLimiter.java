@@ -2,6 +2,14 @@ package org.threadly.concurrent.limiter;
 
 import org.threadly.concurrent.NoThreadScheduler;
 
+/**
+ * <p>An implementation which has the same goals as {@link RateLimiterExecutor} but providing a 
+ * blocking design.  Instead of scheduling tasks which will execute at a given rate, this limiter 
+ * will block on {@link #acquire(int)} until they are able to be run for the given rate.</p>
+ * 
+ * @author jent - Mike Jensen
+ * @since 4.0.0
+ */
 public class BlockingRateLimiter {
   private final NoThreadScheduler scheduler;
   private final RateLimiterExecutor rateLimiter;
