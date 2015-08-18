@@ -1,8 +1,5 @@
 package org.threadly.concurrent.event;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -25,11 +22,9 @@ import org.threadly.util.ExceptionUtils;
  * @author jent - Mike Jensen
  * @since 2.2.0 (existed since 1.1.0 as org.threadly.concurrent.ListenerHelper)
  */
-public class RunnableListenerHelper {
-  protected final Object listenersLock;
+public class RunnableListenerHelper extends AbstractListenerHelper<Runnable> {
   protected final boolean callOnce;
   protected final AtomicBoolean done;
-  protected Map<Runnable, Executor> listeners;
   
   /**
    * Constructs a new {@link RunnableListenerHelper}.  This can call listeners only once, or every 
@@ -38,26 +33,9 @@ public class RunnableListenerHelper {
    * @param callListenersOnce {@code true} if listeners should only be called once
    */
   public RunnableListenerHelper(boolean callListenersOnce) {
-    this.listenersLock = new Object();
     this.callOnce = callListenersOnce;
     this.done = new AtomicBoolean(false);
     this.listeners = null;
-  }
-  
-  /**
-   * Return a collection of the currently subscribed listener instances.  This returned collection 
-   * can NOT be modified.
-   * 
-   * @return A non-null collection of currently subscribed listeners
-   */
-  public Collection<Runnable> getSubscribedListeners() {
-    synchronized (listenersLock) {
-      if (listeners == null) {
-        return Collections.emptyList();
-      } else {
-        return Collections.unmodifiableList(new ArrayList<Runnable>(listeners.keySet()));
-      }
-    }
   }
   
   /**
@@ -231,24 +209,14 @@ public class RunnableListenerHelper {
   }
   
   /**
-   * Removes all listeners currently registered. 
-   */
-  public void clearListeners() {
-    synchronized (listenersLock) {
-      listeners = null;
-    }
-  }
-  
-  /**
    * Returns how many listeners were added, and will be ran on the next call to 
    * {@code callListeners}.  If this was constructed to only run once, all listeners will be 
    * removed after called, and thus this will report zero after callListeners has been invoked.
    * 
    * @return number of listeners registered to be called
    */
+  @Override
   public int registeredListenerCount() {
-    synchronized (listenersLock) {
-      return listeners == null ? 0 : listeners.size();
-    }
+    return super.registeredListenerCount();
   }
 }

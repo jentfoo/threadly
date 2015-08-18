@@ -4,9 +4,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -29,7 +26,7 @@ import org.threadly.util.ExceptionUtils;
  * @since 2.2.0
  * @param <T> Interface for listeners to implement and called into with
  */
-public class ListenerHelper<T> {
+public class ListenerHelper<T> extends AbstractListenerHelper<T> {
   /**
    * This static function allows for quick and easy construction of the {@link ListenerHelper}.  
    * It is equivalent to the normal constructor, but requires less code to do that construction.
@@ -44,8 +41,6 @@ public class ListenerHelper<T> {
   }
   
   protected final T proxyInstance;
-  protected final Object listenersLock;
-  protected Map<T, Executor> listeners;
   
   /**
    * Constructs a new {@link ListenerHelper} that will handle listeners with the provided 
@@ -60,7 +55,6 @@ public class ListenerHelper<T> {
     }
     
     proxyInstance = getProxyInstance(listenerInterface);
-    listenersLock = new Object();
   }
   
   /**
@@ -77,22 +71,6 @@ public class ListenerHelper<T> {
     return (T) Proxy.newProxyInstance(listenerInterface.getClassLoader(), 
                                       new Class<?>[] { listenerInterface }, 
                                       new ListenerCaller());
-  }
-  
-  /**
-   * Return a collection of the currently subscribed listener instances.  This returned collection 
-   * can NOT be modified.
-   * 
-   * @return A non-null collection of currently subscribed listeners
-   */
-  public Collection<T> getSubscribedListeners() {
-    synchronized (listenersLock) {
-      if (listeners == null) {
-        return Collections.emptyList();
-      } else {
-        return Collections.unmodifiableList(new ArrayList<T>(listeners.keySet()));
-      }
-    }
   }
   
   /**
@@ -180,26 +158,6 @@ public class ListenerHelper<T> {
       } else {
         return false;
       }
-    }
-  }
-  
-  /**
-   * Removes all listener currently registered. 
-   */
-  public void clearListeners() {
-    synchronized (listenersLock) {
-      listeners = null;
-    }
-  }
-  
-  /**
-   * Returns how many listeners were added, and will be ran on the next {@link #call()} invocation.
-   * 
-   * @return number of listeners registered to be called
-   */
-  public int registeredListenerCount() {
-    synchronized (listenersLock) {
-      return listeners == null ? 0 : listeners.size();
     }
   }
   
