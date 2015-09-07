@@ -1,6 +1,7 @@
 package org.threadly.concurrent;
 
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -13,7 +14,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.concurrent.future.ListenableRunnableFuture;
-import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.util.ArgumentVerifier;
 import org.threadly.util.ExceptionUtils;
 
@@ -43,7 +43,6 @@ public class KeyDistributedExecutor {
   protected static final int ARRAY_DEQUE_INITIAL_SIZE = 8;  // minimum is 8, should be 2^X
   
   protected final Executor executor;
-  protected final StripedLock sLock;
   protected final int maxTasksPerCycle;
   protected final WorkerFactory wFactory;
   protected final ConcurrentHashMap<Object, TaskQueueWorker> taskWorkers;
@@ -202,48 +201,26 @@ public class KeyDistributedExecutor {
    */
   public KeyDistributedExecutor(int expectedParallism, Executor executor, 
                                 int maxTasksPerCycle, boolean accurateQueueSize) {
-    this(executor, new StripedLock(expectedParallism), maxTasksPerCycle, accurateQueueSize);
-  }
-  
-  /**
-   * Constructor to be used in unit tests.
-   * 
-   * This constructor allows you to provide a maximum number of tasks for a key before it yields 
-   * to another key.  This can make it more fair, and make it so no single key can starve other 
-   * keys from running.  The lower this is set however, the less efficient it becomes in part 
-   * because it has to give up the thread and get it again, but also because it must copy the 
-   * subset of the task queue which it can run.
-   * 
-   * @param executor executor to be used for task worker execution 
-   * @param sLock lock to be used for controlling access to workers
-   * @param maxTasksPerCycle maximum tasks run per key before yielding for other keys
-   * @param accurateQueueSize {@code true} to make {@link #getTaskQueueSize(Object)} more accurate
-   */
-  protected KeyDistributedExecutor(Executor executor, StripedLock sLock, 
-                                   int maxTasksPerCycle, boolean accurateQueueSize) {
     ArgumentVerifier.assertNotNull(executor, "executor");
-    ArgumentVerifier.assertNotNull(sLock, "sLock");
     ArgumentVerifier.assertGreaterThanZero(maxTasksPerCycle, "maxTasksPerCycle");
     
     this.executor = executor;
-    this.sLock = sLock;
     this.maxTasksPerCycle = maxTasksPerCycle;
-    int mapInitialSize = Math.min(sLock.getExpectedConcurrencyLevel(), 
-                                  CONCURRENT_HASH_MAP_MAX_INITIAL_SIZE);
-    int mapConcurrencyLevel = Math.min(sLock.getExpectedConcurrencyLevel(), 
-                                       CONCURRENT_HASH_MAP_MAX_CONCURRENCY_LEVEL);
+    // TODO - can we avoid expectedParallism?
+    int mapInitialSize = Math.min(expectedParallism, CONCURRENT_HASH_MAP_MAX_INITIAL_SIZE);
+    int mapConcurrencyLevel = Math.min(expectedParallism, CONCURRENT_HASH_MAP_MAX_CONCURRENCY_LEVEL);
     if (accurateQueueSize) {
       wFactory = new WorkerFactory() {
         @Override
-        public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask) {
-          return new StatisticWorker(mapKey, workerLock, firstTask);
+        public TaskQueueWorker build(Object mapKey, Runnable firstTask) {
+          return new StatisticWorker(mapKey, firstTask);
         }
       };
     } else {
       wFactory = new WorkerFactory() {
         @Override
-        public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask) {
-          return new TaskQueueWorker(mapKey, workerLock, firstTask);
+        public TaskQueueWorker build(Object mapKey, Runnable firstTask) {
+          return new TaskQueueWorker(mapKey, firstTask);
         }
       };
     }
@@ -373,16 +350,29 @@ public class KeyDistributedExecutor {
    */
   protected void addTask(Object threadKey, Runnable task, Executor executor) {
     TaskQueueWorker worker;
-    Object workerLock = sLock.getLock(threadKey);
-    synchronized (workerLock) {
+    while (true) {
       worker = taskWorkers.get(threadKey);
       if (worker == null) {
-        worker = wFactory.build(threadKey, workerLock, task);
-        taskWorkers.put(threadKey, worker);
-      } else {
-        worker.add(task);
+        worker = wFactory.build(threadKey, task);
+        TaskQueueWorker replacedWorker = taskWorkers.putIfAbsent(threadKey, worker);
+        if (replacedWorker != null) {
+          if (replacedWorker.add(task)) {
+            // return so we wont start worker
+            return;
+          } else {
+            // worker shut down, yield so that hopefully on next loop it is removed from map
+            Thread.yield();
+          }
+        } else {
+          // we added to worker, so break so we can start it outside of lock
+          break;
+        }
+      } else if (worker.add(task)) {
         // return so we wont start worker
         return;
+      } else {
+        // worker shut down, yield so that hopefully on next loop it is removed from map
+        Thread.yield();
       }
     }
 
@@ -493,7 +483,7 @@ public class KeyDistributedExecutor {
    * @since 1.2.0
    */
   private interface WorkerFactory {
-    public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask);
+    public TaskQueueWorker build(Object mapKey, Runnable firstTask);
   }
   
   /**
@@ -505,14 +495,14 @@ public class KeyDistributedExecutor {
    */
   protected class TaskQueueWorker implements Runnable {
     protected final Object mapKey;
-    protected final Object workerLock;
+    protected final AtomicInteger handlingTaskCount;  // becomes -1 when done
     // we treat the first task special to attempt to avoid constructing the ArrayDeque
     protected volatile Runnable firstTask;
-    protected Queue<Runnable> queue;  // locked around workerLock
+    protected Queue<Runnable> queue;
     
-    protected TaskQueueWorker(Object mapKey, Object workerLock, Runnable firstTask) {
+    protected TaskQueueWorker(Object mapKey, Runnable firstTask) {
       this.mapKey = mapKey;
-      this.workerLock = workerLock;
+      this.handlingTaskCount = new AtomicInteger(1);  // 1 since constructed with first task
       this.queue = null;
       this.firstTask = firstTask;
     }
@@ -523,10 +513,7 @@ public class KeyDistributedExecutor {
      * @return How many tasks are waiting to be executed.
      */
     public int getQueueSize() {
-      // the default implementation is very inaccurate
-      synchronized (workerLock) {
-        return (firstTask == null ? 0 : 1) + (queue == null ? 0 : queue.size());
-      }
+      return handlingTaskCount.get();
     }
     
     /**
@@ -535,11 +522,19 @@ public class KeyDistributedExecutor {
      * 
      * @param task Runnable to add to the worker's queue
      */
-    protected void add(Runnable task) {
-      if (queue == null) {
-        queue = new ArrayDeque<Runnable>(ARRAY_DEQUE_INITIAL_SIZE);
+    protected boolean add(Runnable task) {
+      if (handlingTaskCount.incrementAndGet() > 0) {
+        // TODO - can we remove this lock
+        synchronized (this) {
+          if (queue == null) {
+            queue = new ArrayDeque<Runnable>(ARRAY_DEQUE_INITIAL_SIZE);
+          }
+          queue.add(task);
+        }
+        return true;
+      } else {
+        return false;
       }
-      queue.add(task);
     }
     
     /**
@@ -548,8 +543,12 @@ public class KeyDistributedExecutor {
      * 
      * @param task Runnable to run
      */
-    protected void runTask(Runnable task) {
-      ExceptionUtils.runRunnable(task);
+    protected void runTasks(Collection<Runnable> tasks) {
+      for (Runnable r : tasks) {
+        ExceptionUtils.runRunnable(r);
+      }
+      // we know the collection should not have changed once provided to us
+      handlingTaskCount.addAndGet(-tasks.size());
     }
     
     @Override
@@ -563,16 +562,25 @@ public class KeyDistributedExecutor {
         // set to null to allow GC
         firstTask = null;
         
-        runTask(task);
+        handlingTaskCount.decrementAndGet();
+        ExceptionUtils.runRunnable(task);
       }
       
       while (true) {
-        Queue<Runnable> nextQueue;
-        synchronized (workerLock) {
-          if (queue == null) {  // nothing left to run
+        if (handlingTaskCount.get() == 0) {  // nothing left to run
+          if (handlingTaskCount.decrementAndGet() < 0) {
+            // we know we can be removed safely now
             taskWorkers.remove(mapKey);
             return;
-          } else if (consumedItems < maxTasksPerCycle) {
+          } else {
+            // failed to remove, reset state and continue
+            handlingTaskCount.incrementAndGet();
+          }
+        }
+        Queue<Runnable> nextQueue;
+        if (consumedItems < maxTasksPerCycle) {
+          // TODO - can we remove this lock for the queue?
+          synchronized (this) {
             // we can run at least one task...let's figure out how much we can run
             if (queue.size() + consumedItems <= maxTasksPerCycle) {
               // we can run the entire next queue
@@ -590,19 +598,17 @@ public class KeyDistributedExecutor {
             }
             
             consumedItems += nextQueue.size();
-          } else {
-            // re-execute this worker to give other works a chance to run
-            executor.execute(this);
-            /* notice that we never removed from taskWorkers, and thus wont be
-             * executed from people adding new tasks 
-             */
-            return;
           }
+        } else {
+          // re-execute this worker to give other works a chance to run
+          executor.execute(this);
+          /* notice that we never removed from taskWorkers, and thus wont be
+           * executed from people adding new tasks 
+           */
+          return;
         }
-        
-        for (Runnable r : nextQueue) {
-          runTask(r);
-        }
+
+        runTasks(nextQueue);
       }
     }
   }
@@ -615,31 +621,16 @@ public class KeyDistributedExecutor {
    * @since 1.2.0
    */
   protected class StatisticWorker extends TaskQueueWorker {
-    private final AtomicInteger queueSize;
-    
-    protected StatisticWorker(Object mapKey, Object workerLock, Runnable firstTask) {
-      super(mapKey, workerLock, firstTask);
-      
-      queueSize = new AtomicInteger(1);
+    protected StatisticWorker(Object mapKey, Runnable firstTask) {
+      super(mapKey, firstTask);
     }
     
     @Override
-    public int getQueueSize() {
-      return queueSize.get();
-    }
-    
-    @Override
-    protected void add(Runnable task) {
-      queueSize.incrementAndGet();
-      
-      super.add(task);
-    }
-    
-    @Override
-    protected void runTask(Runnable task) {
-      queueSize.decrementAndGet();
-      
-      super.runTask(task);
+    protected void runTasks(Collection<Runnable> tasks) {
+      for (Runnable r : tasks) {
+        handlingTaskCount.decrementAndGet();
+        ExceptionUtils.runRunnable(r);
+      }
     }
   }
   

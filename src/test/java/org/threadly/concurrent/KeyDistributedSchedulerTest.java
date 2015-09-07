@@ -12,11 +12,11 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.threadly.BlockingTestRunnable;
 import org.threadly.ThreadlyTestUtil;
 import org.threadly.concurrent.KeyDistributedExecutorTest.TDCallable;
 import org.threadly.concurrent.KeyDistributedExecutorTest.TDRunnable;
 import org.threadly.concurrent.KeyDistributedExecutorTest.ThreadContainer;
-import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.test.concurrent.TestRunnable;
 import org.threadly.test.concurrent.TestableScheduler;
 
@@ -31,33 +31,32 @@ public class KeyDistributedSchedulerTest {
   }
   
   private PriorityScheduler scheduler;
-  private Object agentLock;
   private KeyDistributedScheduler distributor;
   
   @Before
   public void setup() {
     scheduler = new StrictPriorityScheduler(PARALLEL_LEVEL * 2);
-    StripedLock sLock = new StripedLock(1);
-    agentLock = sLock.getLock(null);  // there should be only one lock
-    distributor = new KeyDistributedScheduler(scheduler, sLock, 
-                                              Integer.MAX_VALUE, false);
+    distributor = new KeyDistributedScheduler(1, scheduler, Integer.MAX_VALUE, false);
   }
   
   @After
   public void cleanup() {
     scheduler.shutdownNow();
     scheduler = null;
-    agentLock = null;
     distributor = null;
   }
   
-  private List<TDRunnable> populate(AddHandler ah) {
+  private static List<TDRunnable> populate(AddHandler ah) {
     final List<TDRunnable> runs = new ArrayList<TDRunnable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
     
-    // hold agent lock to prevent execution till ready
-    synchronized (agentLock) {
+    // use BTR to avoid execution till all are submitted
+    List<BlockingTestRunnable> blockingRunnables = new ArrayList<BlockingTestRunnable>(PARALLEL_LEVEL);
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
+        BlockingTestRunnable btr = new BlockingTestRunnable();
+        blockingRunnables.add(btr);
         ThreadContainer tc = new ThreadContainer();
+        ah.addTDRunnable(tc, btr);
         TDRunnable previous = null;
         for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
           TDRunnable tr = new TDRunnable(tc, previous);
@@ -66,6 +65,10 @@ public class KeyDistributedSchedulerTest {
           
           previous = tr;
         }
+      }
+    } finally {
+      for (BlockingTestRunnable btr : blockingRunnables) {
+        btr.unblock();
       }
     }
     
@@ -82,8 +85,13 @@ public class KeyDistributedSchedulerTest {
       // expected
     }
     try {
-      new KeyDistributedScheduler(scheduler, null, 
-                                  Integer.MAX_VALUE, false);
+      new KeyDistributedScheduler(-1, scheduler, Integer.MAX_VALUE, false);
+      fail("Exception should have been thrown");
+    } catch (IllegalArgumentException e) {
+      // expected
+    }
+    try {
+      new KeyDistributedScheduler(1, scheduler, -1, false);
       fail("Exception should have been thrown");
     } catch (IllegalArgumentException e) {
       // expected
@@ -102,8 +110,6 @@ public class KeyDistributedSchedulerTest {
     new KeyDistributedScheduler(1, scheduler, true);
     new KeyDistributedScheduler(1, scheduler, 1);
     new KeyDistributedScheduler(1, scheduler, 1, true);
-    StripedLock sLock = new StripedLock(1);
-    new KeyDistributedScheduler(scheduler, sLock, 1, false);
   }
   
   @Test (expected = IllegalArgumentException.class)
@@ -121,7 +127,7 @@ public class KeyDistributedSchedulerTest {
   public void addTaskTest() {
     List<TDRunnable> runs = populate(new AddHandler() {
       @Override
-      public void addTDRunnable(Object key, TDRunnable tdr) {
+      public void addTDRunnable(Object key, Runnable tdr) {
         distributor.addTask(key, tdr);
       }
     });
@@ -140,7 +146,7 @@ public class KeyDistributedSchedulerTest {
   public void executeTest() {
     List<TDRunnable> runs = populate(new AddHandler() {
       @Override
-      public void addTDRunnable(Object key, TDRunnable tdr) {
+      public void addTDRunnable(Object key, Runnable tdr) {
         distributor.execute(key, tdr);
       }
     });
@@ -227,11 +233,15 @@ public class KeyDistributedSchedulerTest {
   @SuppressWarnings("deprecation")
   public void submitTaskCallableConsistentThreadTest() {
     List<TDCallable> runs = new ArrayList<TDCallable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
-    
-    // hold agent lock to avoid execution till all are submitted
-    synchronized (agentLock) {
+
+    // use BTR to avoid execution till all are submitted
+    List<BlockingTestRunnable> blockingRunnables = new ArrayList<BlockingTestRunnable>(PARALLEL_LEVEL);
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
+        BlockingTestRunnable btr = new BlockingTestRunnable();
+        blockingRunnables.add(btr);
         ThreadContainer tc = new ThreadContainer();
+        distributor.submitTask(tc, btr);
         TDCallable previous = null;
         for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
           TDCallable tr = new TDCallable(tc, previous);
@@ -240,6 +250,10 @@ public class KeyDistributedSchedulerTest {
           
           previous = tr;
         }
+      }
+    } finally {
+      for (BlockingTestRunnable btr : blockingRunnables) {
+        btr.unblock();
       }
     }
     
@@ -255,11 +269,15 @@ public class KeyDistributedSchedulerTest {
   @Test
   public void submitCallableConsistentThreadTest() {
     List<TDCallable> runs = new ArrayList<TDCallable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
-    
-    // hold agent lock to avoid execution till all are submitted
-    synchronized (agentLock) {
+
+    // use BTR to avoid execution till all are submitted
+    List<BlockingTestRunnable> blockingRunnables = new ArrayList<BlockingTestRunnable>(PARALLEL_LEVEL);
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
+        BlockingTestRunnable btr = new BlockingTestRunnable();
+        blockingRunnables.add(btr);
         ThreadContainer tc = new ThreadContainer();
+        distributor.submit(tc, btr);
         TDCallable previous = null;
         for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
           TDCallable tr = new TDCallable(tc, previous);
@@ -268,6 +286,10 @@ public class KeyDistributedSchedulerTest {
           
           previous = tr;
         }
+      }
+    } finally {
+      for (BlockingTestRunnable btr : blockingRunnables) {
+        btr.unblock();
       }
     }
     
@@ -318,7 +340,7 @@ public class KeyDistributedSchedulerTest {
   public void scheduleTaskExecutionTest() {
     List<TDRunnable> runs = populate(new AddHandler() {
       @Override
-      public void addTDRunnable(Object key, TDRunnable tdr) {
+      public void addTDRunnable(Object key, Runnable tdr) {
         distributor.scheduleTask(key, tdr, DELAY_TIME);
       }
     });
@@ -336,7 +358,7 @@ public class KeyDistributedSchedulerTest {
   public void scheduleExecutionTest() {
     List<TDRunnable> runs = populate(new AddHandler() {
       @Override
-      public void addTDRunnable(Object key, TDRunnable tdr) {
+      public void addTDRunnable(Object key, Runnable tdr) {
         distributor.schedule(key, tdr, DELAY_TIME);
       }
     });
@@ -490,7 +512,7 @@ public class KeyDistributedSchedulerTest {
     List<TDRunnable> runs = populate(new AddHandler() {
       int initialDelay = 0;
       @Override
-      public void addTDRunnable(Object key, TDRunnable tdr) {
+      public void addTDRunnable(Object key, Runnable tdr) {
         distributor.scheduleTaskWithFixedDelay(key, tdr, initialDelay++, DELAY_TIME);
       }
     });
@@ -561,6 +583,6 @@ public class KeyDistributedSchedulerTest {
   }
   
   private interface AddHandler {
-    public void addTDRunnable(Object key, TDRunnable tdr);
+    public void addTDRunnable(Object key, Runnable tdr);
   }
 }

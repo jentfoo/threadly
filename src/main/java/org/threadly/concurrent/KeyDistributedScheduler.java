@@ -5,7 +5,6 @@ import java.util.concurrent.Callable;
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.concurrent.future.ListenableRunnableFuture;
-import org.threadly.concurrent.lock.StripedLock;
 import org.threadly.util.ArgumentVerifier;
 
 /**
@@ -173,25 +172,7 @@ public class KeyDistributedScheduler extends KeyDistributedExecutor {
    */
   public KeyDistributedScheduler(int expectedParallism, SimpleScheduler scheduler, 
                                  int maxTasksPerCycle, boolean accurateQueueSize) {
-    this(scheduler, new StripedLock(expectedParallism), maxTasksPerCycle, accurateQueueSize);
-  }
-  
-  /**
-   * Constructor to be used in unit tests.
-   * 
-   * This constructor allows you to provide a maximum number of tasks for a key before it yields 
-   * to another key.  This can make it more fair, and make it so no single key can starve other 
-   * keys from running.  The lower this is set however, the less efficient it becomes in part 
-   * because it has to give up the thread and get it again, but also because it must copy the 
-   * subset of the task queue which it can run.
-   * 
-   * @param scheduler scheduler to be used for task worker execution 
-   * @param sLock lock to be used for controlling access to workers
-   * @param maxTasksPerCycle maximum tasks run per key before yielding for other keys
-   */
-  protected KeyDistributedScheduler(SimpleScheduler scheduler, StripedLock sLock, 
-                                    int maxTasksPerCycle, boolean accurateQueueSize) {
-    super(scheduler, sLock, maxTasksPerCycle, accurateQueueSize);
+    super(expectedParallism, scheduler, maxTasksPerCycle, accurateQueueSize);
     
     this.scheduler = scheduler;
   }
