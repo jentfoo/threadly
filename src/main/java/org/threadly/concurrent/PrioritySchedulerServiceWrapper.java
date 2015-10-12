@@ -96,7 +96,9 @@ public class PrioritySchedulerServiceWrapper extends AbstractExecutorServiceWrap
     QueueSet queueSet = pScheduler.taskConsumer.getQueueSet(pScheduler.getDefaultPriority());
     RecurringDelayTaskWrapper rdtw = 
         new RecurringDelayTaskWrapper(taskFuture, queueSet,
-                                      Clock.accurateForwardProgressingMillis() + initialDelay, delayInMs);
+                                      Clock.accurateTimeNanos() + 
+                                        (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                      delayInMs * Clock.NANOS_IN_MILLISECOND);
     pScheduler.addToScheduleQueue(queueSet, rdtw);
     
     return new ScheduledFutureDelegate<Void>(taskFuture, new DelayedTaskWrapper(rdtw));
@@ -113,7 +115,9 @@ public class PrioritySchedulerServiceWrapper extends AbstractExecutorServiceWrap
     QueueSet queueSet = pScheduler.taskConsumer.getQueueSet(pScheduler.getDefaultPriority());
     RecurringRateTaskWrapper rrtw = 
         new RecurringRateTaskWrapper(taskFuture, queueSet,
-                                     Clock.accurateForwardProgressingMillis() + initialDelay, periodInMillis);
+                                     Clock.accurateTimeNanos() + 
+                                       (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                     periodInMillis * Clock.NANOS_IN_MILLISECOND);
     pScheduler.addToScheduleQueue(queueSet, rrtw);
     
     return new ScheduledFutureDelegate<Void>(taskFuture, new DelayedTaskWrapper(rrtw));

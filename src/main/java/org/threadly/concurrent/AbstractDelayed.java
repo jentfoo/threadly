@@ -16,8 +16,8 @@ public abstract class AbstractDelayed implements Delayed {
     if (this == o) {
       return 0;
     } else {
-      long thisDelay = this.getDelay(TimeUnit.MILLISECONDS);
-      long otherDelay = o.getDelay(TimeUnit.MILLISECONDS);
+      long thisDelay = this.getDelay(TimeUnit.NANOSECONDS);
+      long otherDelay = o.getDelay(TimeUnit.NANOSECONDS);
       if (thisDelay == otherDelay) {
         return 0;
       } else if (thisDelay > otherDelay) {

@@ -227,7 +227,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       ShutdownRunnable sr = new ShutdownRunnable(workerPool, taskConsumer);
       QueueSet queueSet = taskConsumer.highPriorityQueueSet;
       queueSet.addExecute(new OneTimeTaskWrapper(sr, queueSet.executeQueue, 
-                                                 Clock.lastKnownForwardProgressingMillis()));
+                                                 Clock.lastKnownTimeNanos()));
     }
   }
 
@@ -325,11 +325,12 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     if (delayInMillis == 0) {
       addToExecuteQueue(queueSet, 
                         (result = new OneTimeTaskWrapper(task, queueSet.executeQueue, 
-                                                         Clock.lastKnownForwardProgressingMillis())));
+                                                         Clock.lastKnownTimeNanos())));
     } else {
       addToScheduleQueue(queueSet, 
                          (result = new OneTimeTaskWrapper(task, queueSet.scheduleQueue, 
-                                                          Clock.accurateForwardProgressingMillis() + delayInMillis)));
+                                                          Clock.accurateTimeNanos() + 
+                                                            (delayInMillis * Clock.NANOS_IN_MILLISECOND))));
     }
     return result;
   }
@@ -347,8 +348,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     QueueSet queueSet = taskConsumer.getQueueSet(priority);
     addToScheduleQueue(queueSet, 
                        new RecurringDelayTaskWrapper(task, queueSet, 
-                                                     Clock.accurateForwardProgressingMillis() + initialDelay, 
-                                                     recurringDelay));
+                                                     Clock.accurateTimeNanos() + 
+                                                       (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                                     recurringDelay * Clock.NANOS_IN_MILLISECOND));
   }
 
   @Override
@@ -364,8 +366,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     QueueSet queueSet = taskConsumer.getQueueSet(priority);
     addToScheduleQueue(queueSet, 
                        new RecurringRateTaskWrapper(task, queueSet, 
-                                                    Clock.accurateForwardProgressingMillis() + initialDelay, 
-                                                    period));
+                                                    Clock.accurateTimeNanos() + 
+                                                      (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                                    period * Clock.NANOS_IN_MILLISECOND));
   }
   
   /**
@@ -429,7 +432,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     protected final QueueSet lowPriorityQueueSet;
     protected final QueueSet starvablePriorityQueueSet;
     protected volatile Thread runningThread;
-    private volatile long maxWaitForLowPriorityInMs;
+    private volatile long maxWaitForLowPriorityInNanos;
     
     public QueueManager(WorkerPool workerPool, String threadName, 
                         long maxWaitForLowPriorityInMs) {
@@ -550,35 +553,40 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     protected TaskWrapper getNextReadyTask() throws InterruptedException {
       while (runningThread != null) {  // loop till we have something to return
         TaskWrapper nextTask = getNextTask(highPriorityQueueSet, lowPriorityQueueSet, 
-                                           maxWaitForLowPriorityInMs);
+                                           maxWaitForLowPriorityInNanos);
         if (nextTask == null) {
           TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask();
           if (nextStarvableTask == null) {
             LockSupport.park();
           } else {
             long nextStarvableTaskDelay = nextStarvableTask.getScheduleDelay();
-            if (nextStarvableTaskDelay > 0) {
-              LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * nextStarvableTaskDelay);
+            if (nextStarvableTaskDelay > Clock.NANOS_IN_MILLISECOND) {
+              LockSupport.parkNanos(nextStarvableTaskDelay);
+            } else if (nextStarvableTaskDelay > 0) {
+              // spin // TODO - benchmark
             } else if (nextStarvableTask.canExecute()) {
               return nextStarvableTask;
             }
           }
         } else {
           long nextTaskDelay = nextTask.getScheduleDelay();
-          if (nextTaskDelay > 0) {
+          if (nextTaskDelay > Clock.NANOS_IN_MILLISECOND) {
             TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask();
             if (nextStarvableTask == null) {
-              LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * nextTaskDelay);
+              LockSupport.parkNanos(nextTaskDelay);
             } else {
               long nextStarvableTaskDelay = nextStarvableTask.getScheduleDelay();
-              if (nextStarvableTaskDelay > 0) {
-                LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * 
-                                        (nextTaskDelay > nextStarvableTaskDelay ? 
-                                           nextStarvableTaskDelay : nextTaskDelay));
+              if (nextStarvableTaskDelay > Clock.NANOS_IN_MILLISECOND) {
+                LockSupport.parkNanos(nextTaskDelay > nextStarvableTaskDelay ? 
+                                        nextStarvableTaskDelay : nextTaskDelay);
+              } else if (nextStarvableTaskDelay > 0) {
+                // spin // TODO - benchmark
               } else if (nextStarvableTask.canExecute()) {
                 return nextStarvableTask;
               }
             }
+          } else if (nextTaskDelay > 0) {
+            // spin // TODO - benchmark
           } else if (nextTask.canExecute()) {
             return nextTask;
           }
@@ -636,7 +644,11 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     public void setMaxWaitForLowPriority(long maxWaitForLowPriorityInMs) {
       ArgumentVerifier.assertNotNegative(maxWaitForLowPriorityInMs, "maxWaitForLowPriorityInMs");
       
-      this.maxWaitForLowPriorityInMs = maxWaitForLowPriorityInMs;
+      long waitNanos = maxWaitForLowPriorityInMs * Clock.NANOS_IN_MILLISECOND;
+      if (waitNanos < maxWaitForLowPriorityInMs) {
+        waitNanos = Long.MAX_VALUE;
+      }
+      this.maxWaitForLowPriorityInNanos = waitNanos;
     }
     
     /**
@@ -646,7 +658,11 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
      * @return currently set max wait for low priority task
      */
     public long getMaxWaitForLowPriority() {
-      return maxWaitForLowPriorityInMs;
+      if (maxWaitForLowPriorityInNanos == Long.MAX_VALUE) {
+        return Long.MAX_VALUE;
+      } else {
+        return maxWaitForLowPriorityInNanos / Clock.NANOS_IN_MILLISECOND;
+      }
     }
   }
   

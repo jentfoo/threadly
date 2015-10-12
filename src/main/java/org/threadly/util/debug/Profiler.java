@@ -260,7 +260,7 @@ public class Profiler {
    * @param sampleDurationInMillis if greater than {@code 0} an automatic stop will occur after that many milliseconds 
    * @param completionFuture If not {@code null} future will be called once the next {@link #stop()} is invoked
    */
-  private void start(Executor executor, final long sampleDurationInMillis, 
+  private void start(Executor executor, long sampleDurationInMillis, 
                      SettableListenableFuture<String> completionFuture) {
     synchronized (startStopLock) {
       if (sampleDurationInMillis > 0) {
@@ -314,12 +314,13 @@ public class Profiler {
         }
         // start or schedule to handle run time limit
         if (sampleDurationInMillis > 0) {
+          final long sampleDurationInNanos = sampleDurationInMillis * Clock.NANOS_IN_MILLISECOND;
           pStore.dumpLoopRun = new Runnable() {
-            private final long startTime = Clock.accurateForwardProgressingMillis();
+            private final long startTime = Clock.accurateTimeNanos();
             
             @Override
             public void run() {
-              if (Clock.lastKnownForwardProgressingMillis() - startTime > sampleDurationInMillis) {
+              if (Clock.lastKnownTimeNanos() - startTime > sampleDurationInNanos) {
                 pStore.dumpLoopRun = null;
                 stop();
               }

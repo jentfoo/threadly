@@ -67,7 +67,7 @@ public class PrioritySchedulerQueueManagerTest {
   public void removeCallableTest() {
     TestCallable callable = new TestCallable();
     OneTimeTaskWrapper task = new OneTimeTaskWrapper(new ListenableFutureTask<Object>(false, callable), 
-                                                     null, Clock.lastKnownForwardProgressingMillis());
+                                                     null, Clock.lastKnownTimeNanos());
     
     assertFalse(queueManager.remove(callable));
     
@@ -85,8 +85,7 @@ public class PrioritySchedulerQueueManagerTest {
   @Test
   public void removeRunnableTest() {
     TestRunnable runnable = new TestRunnable();
-    OneTimeTaskWrapper task = new OneTimeTaskWrapper(runnable, null, 
-                                                     Clock.lastKnownForwardProgressingMillis());
+    OneTimeTaskWrapper task = new OneTimeTaskWrapper(runnable, null, Clock.lastKnownTimeNanos());
     
     assertFalse(queueManager.remove(runnable));
     
@@ -120,7 +119,7 @@ public class PrioritySchedulerQueueManagerTest {
   
   private void getNextReadyTaskExecuteTest(QueueSet queueSet) throws InterruptedException {
     OneTimeTaskWrapper task = new OneTimeTaskWrapper(new TestRunnable(), queueSet.executeQueue, 
-                                                     Clock.lastKnownForwardProgressingMillis());
+                                                     Clock.lastKnownTimeNanos());
     
     queueSet.addExecute(task);
     
@@ -139,7 +138,7 @@ public class PrioritySchedulerQueueManagerTest {
   
   private void getNextReadyTaskScheduledTest(QueueSet queueSet) throws InterruptedException {
     TaskWrapper task = new OneTimeTaskWrapper(new TestRunnable(), queueSet.scheduleQueue, 
-                                              Clock.lastKnownForwardProgressingMillis());
+                                              Clock.lastKnownTimeNanos());
     
     queueSet.addScheduled(task);
     
@@ -151,7 +150,8 @@ public class PrioritySchedulerQueueManagerTest {
     long startTime = Clock.accurateForwardProgressingMillis();
     TaskWrapper task = new OneTimeTaskWrapper(new TestRunnable(), 
                                               queueManager.highPriorityQueueSet.scheduleQueue, 
-                                              Clock.accurateForwardProgressingMillis() + DELAY_TIME);
+                                              Clock.lastKnownTimeNanos() + 
+                                                (DELAY_TIME * Clock.NANOS_IN_MILLISECOND));
     queueManager.highPriorityQueueSet.addScheduled(task);
     
     TaskWrapper resultTask;
@@ -166,12 +166,12 @@ public class PrioritySchedulerQueueManagerTest {
   public void getNextReadyTaskExecuteAheadOfScheduledTest() throws InterruptedException {
     OneTimeTaskWrapper executeTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                             queueManager.highPriorityQueueSet.executeQueue, 
-                                                            Clock.accurateForwardProgressingMillis());
+                                                            Clock.accurateTimeNanos());
     queueManager.highPriorityQueueSet.addExecute(executeTask);
     TestUtils.blockTillClockAdvances();
     TaskWrapper scheduleTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                       queueManager.highPriorityQueueSet.scheduleQueue, 
-                                                      Clock.lastKnownForwardProgressingMillis());
+                                                      Clock.lastKnownTimeNanos());
     queueManager.highPriorityQueueSet.addScheduled(scheduleTask);
 
     assertTrue(executeTask == queueManager.getNextReadyTask());
@@ -182,12 +182,12 @@ public class PrioritySchedulerQueueManagerTest {
   public void getNextReadyTaskScheduledAheadOfExecuteTest() throws InterruptedException {
     TaskWrapper scheduleTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                       queueManager.highPriorityQueueSet.scheduleQueue,
-                                                      Clock.accurateForwardProgressingMillis());
+                                                      Clock.accurateTimeNanos());
     queueManager.highPriorityQueueSet.addScheduled(scheduleTask);
     TestUtils.blockTillClockAdvances();
     OneTimeTaskWrapper executeTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                             queueManager.highPriorityQueueSet.executeQueue, 
-                                                            Clock.lastKnownForwardProgressingMillis());
+                                                            Clock.lastKnownTimeNanos());
     queueManager.highPriorityQueueSet.addExecute(executeTask);
 
     assertTrue(scheduleTask == queueManager.getNextReadyTask());
@@ -198,12 +198,13 @@ public class PrioritySchedulerQueueManagerTest {
   public void getNextReadyTaskHighPriorityDelayedTest() throws InterruptedException {
     TaskWrapper scheduleTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                       queueManager.highPriorityQueueSet.scheduleQueue, 
-                                                      Clock.accurateForwardProgressingMillis() + 1000);
+                                                      Clock.accurateTimeNanos() + 
+                                                        (1000 * Clock.NANOS_IN_MILLISECOND));
     queueManager.highPriorityQueueSet.addScheduled(scheduleTask);
     TestUtils.blockTillClockAdvances();
     OneTimeTaskWrapper executeTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                             queueManager.lowPriorityQueueSet.executeQueue, 
-                                                            Clock.lastKnownForwardProgressingMillis());
+                                                            Clock.lastKnownTimeNanos());
     queueManager.lowPriorityQueueSet.addExecute(executeTask);
 
     assertTrue(executeTask == queueManager.getNextReadyTask());
@@ -214,10 +215,12 @@ public class PrioritySchedulerQueueManagerTest {
     long startTime = Clock.accurateForwardProgressingMillis();
     TaskWrapper highTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                   queueManager.highPriorityQueueSet.scheduleQueue, 
-                                                  Clock.accurateForwardProgressingMillis() + DELAY_TIME);
+                                                  Clock.accurateTimeNanos() + 
+                                                    (DELAY_TIME * Clock.NANOS_IN_MILLISECOND));
     TaskWrapper lowTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                  queueManager.lowPriorityQueueSet.scheduleQueue, 
-                                                 Clock.lastKnownForwardProgressingMillis() + (DELAY_TIME * 10));
+                                                 Clock.lastKnownTimeNanos() + 
+                                                   ((DELAY_TIME * 10) * Clock.NANOS_IN_MILLISECOND));
     queueManager.highPriorityQueueSet.addScheduled(highTask);
     queueManager.lowPriorityQueueSet.addScheduled(lowTask);
 
@@ -231,10 +234,12 @@ public class PrioritySchedulerQueueManagerTest {
     long startTime = Clock.accurateForwardProgressingMillis();
     TaskWrapper highTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                   queueManager.highPriorityQueueSet.scheduleQueue, 
-                                                  Clock.accurateForwardProgressingMillis() + (DELAY_TIME * 10));
+                                                  Clock.lastKnownTimeNanos() + 
+                                                    ((DELAY_TIME * 10) * Clock.NANOS_IN_MILLISECOND));
     TaskWrapper lowTask = new OneTimeTaskWrapper(new TestRunnable(), 
                                                  queueManager.lowPriorityQueueSet.scheduleQueue, 
-                                                 Clock.lastKnownForwardProgressingMillis() + DELAY_TIME);
+                                                 Clock.lastKnownTimeNanos() + 
+                                                   (DELAY_TIME * Clock.NANOS_IN_MILLISECOND));
     queueManager.highPriorityQueueSet.addScheduled(highTask);
     queueManager.lowPriorityQueueSet.addScheduled(lowTask);
 
@@ -245,7 +250,8 @@ public class PrioritySchedulerQueueManagerTest {
   
   @Test
   public void getAndSetLowPriorityWaitTest() {
-    assertEquals(AbstractPriorityScheduler.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS, queueManager.getMaxWaitForLowPriority());
+    assertEquals(AbstractPriorityScheduler.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS, 
+                 queueManager.getMaxWaitForLowPriority());
     
     long lowPriorityWait = Long.MAX_VALUE;
     queueManager.setMaxWaitForLowPriority(lowPriorityWait);
@@ -262,6 +268,7 @@ public class PrioritySchedulerQueueManagerTest {
       // expected
     }
     
-    assertEquals(AbstractPriorityScheduler.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS, queueManager.getMaxWaitForLowPriority());
+    assertEquals(AbstractPriorityScheduler.DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS, 
+                 queueManager.getMaxWaitForLowPriority());
   }
 }

@@ -7,7 +7,7 @@ package org.threadly.concurrent;
  * cause).</p>
  * 
  * <p>This solve that by just asking for the absolute time, which should be referenced from 
- * {@link org.threadly.util.Clock#accurateForwardProgressingMillis()}.  This should NOT 
+ * {@link org.threadly.util.Clock#accurateTimeNanos()}.  This should NOT 
  * reference the time since epoc (since that time is sensitive to clock changes).</p>
  * 
  * @author jent
@@ -16,9 +16,9 @@ package org.threadly.concurrent;
 interface DelayedTask {
   /**
    * Get the absolute time when this should run, in comparison with the time returned from 
-   * {@link org.threadly.util.Clock#accurateForwardProgressingMillis()}.
+   * {@link org.threadly.util.Clock#accurateTimeNanos()}.
    * 
-   * @return Absolute time in millis this task should run
+   * @return Absolute time in nanos this task should run
    */
   public long getRunTime();
 }

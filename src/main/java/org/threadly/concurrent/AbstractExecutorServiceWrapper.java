@@ -50,11 +50,11 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
 
   @Override
   public boolean awaitTermination(long timeout, TimeUnit unit) {
-    long startTime = Clock.accurateForwardProgressingMillis();
-    long waitTimeInMs = unit.toMillis(timeout);
+    long startTime = Clock.accurateTimeNanos();
+    long waitTimeInMs = unit.toNanos(timeout);
     Thread currentThread = Thread.currentThread();
     while (! isTerminated() && 
-           Clock.accurateForwardProgressingMillis() - startTime < waitTimeInMs && 
+           Clock.accurateTimeNanos() - startTime < waitTimeInMs && 
            ! currentThread.isInterrupted()) {
       // just spin till terminated or time expires
       LockSupport.parkNanos(AWAIT_TERMINATION_POLL_INTERVAL_IN_NANOS);
@@ -86,8 +86,8 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
   @Override
   public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks,
                                        long timeout, TimeUnit unit) throws InterruptedException {
-    long startTime = Clock.accurateForwardProgressingMillis();
     long timeoutInMs = unit.toMillis(timeout);
+    long startTime = timeoutInMs < Long.MAX_VALUE ? Clock.accurateForwardProgressingMillis() : -1;
     List<Future<T>> resultList = new ArrayList<Future<T>>(tasks.size());
     // execute all the tasks provided
     {
@@ -103,11 +103,15 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
       }
     }
     // block till all tasks finish, or we reach our timeout
-    long remainingTime = timeoutInMs - (Clock.accurateForwardProgressingMillis() - startTime);
-    try {
-      FutureUtils.blockTillAllComplete(resultList, remainingTime);
-    } catch (TimeoutException e) {
-      FutureUtils.cancelIncompleteFutures(resultList, true);
+    if (timeoutInMs < Long.MAX_VALUE) {
+      long remainingTime = timeoutInMs - (Clock.accurateForwardProgressingMillis() - startTime);
+      try {
+        FutureUtils.blockTillAllComplete(resultList, remainingTime);
+      } catch (TimeoutException e) {
+        FutureUtils.cancelIncompleteFutures(resultList, true);
+      }
+    } else {
+      FutureUtils.blockTillAllComplete(resultList);
     }
     
     return resultList;
@@ -117,7 +121,7 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
   public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException,
                                                                          ExecutionException {
     try {
-      return invokeAny(tasks, Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+      return invokeAny(tasks, Long.MAX_VALUE, TimeUnit.NANOSECONDS);
     } catch (TimeoutException e) {
       // basically impossible
       throw ExceptionUtils.makeRuntime(e);
@@ -129,11 +133,11 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
                          long timeout, TimeUnit unit) throws InterruptedException,
                                                              ExecutionException, 
                                                              TimeoutException {
-    final long startTime = Clock.accurateForwardProgressingMillis();
     if (tasks.size() < 1) {
       throw new IllegalArgumentException("Empty task list provided");
     }
-    final long timeoutInMs = unit.toMillis(timeout);
+    final long startTime = Clock.accurateTimeNanos();
+    final long timeoutInNanos = unit.toNanos(timeout);
     int failureCount = 0;
     // going to be optimistic and allocate the initialize size so that at most we have to do one expansion
     List<Future<T>> submittedFutures = new ArrayList<Future<T>>((tasks.size() / 2) + 1);
@@ -145,7 +149,7 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
       // submit first one
       submittedFutures.add(ecs.submit(it.next()));
 
-      long remainingTime = timeoutInMs - (Clock.lastKnownForwardProgressingMillis() - startTime);
+      long remainingTime = timeoutInNanos - (Clock.lastKnownTimeNanos() - startTime);
       while (it.hasNext() && remainingTime > 0) {
         Future<T> completedFuture = ecs.poll();
         if (completedFuture == null) {
@@ -159,12 +163,12 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
             lastEE = e;
           }
         }
-        remainingTime = timeoutInMs - (Clock.accurateForwardProgressingMillis() - startTime);
+        remainingTime = timeoutInNanos - (Clock.accurateTimeNanos() - startTime);
       }
       
       // we must compare against failure count otherwise we may throw a TimeoutException when all tasks have failed
       while (remainingTime > 0 && failureCount < submittedFutures.size()) {
-        Future<T> completedFuture = ecs.poll(remainingTime, TimeUnit.MILLISECONDS);
+        Future<T> completedFuture = ecs.poll(remainingTime, TimeUnit.NANOSECONDS);
         if (completedFuture == null) {
           throw new TimeoutException();
         } else {
@@ -175,7 +179,7 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
             lastEE = e;
           }
         }
-        remainingTime = timeoutInMs - (Clock.accurateForwardProgressingMillis() - startTime);
+        remainingTime = timeoutInNanos - (Clock.accurateTimeNanos() - startTime);
       }
       
       if (remainingTime <= 0) {
@@ -284,8 +288,7 @@ abstract class AbstractExecutorServiceWrapper implements ScheduledExecutorServic
 
     @Override
     public long getDelay(TimeUnit unit) {
-      return unit.convert(task.getRunTime() - Clock.accurateForwardProgressingMillis(), 
-                          TimeUnit.MILLISECONDS);
+      return unit.convert(task.getRunTime() - Clock.accurateTimeNanos(), TimeUnit.NANOSECONDS);
     }
   }
   

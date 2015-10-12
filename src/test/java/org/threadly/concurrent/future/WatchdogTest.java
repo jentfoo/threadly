@@ -55,6 +55,7 @@ public class WatchdogTest {
     assertTrue(watchdog.isActive());
     
     TestUtils.blockTillClockAdvances();
+    TestUtils.blockTillClockAdvances();
     assertEquals(1, scheduler.tick(null));
     
     assertFalse(watchdog.isActive());

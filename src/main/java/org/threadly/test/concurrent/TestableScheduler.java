@@ -299,8 +299,8 @@ public class TestableScheduler extends AbstractPriorityScheduler {
     }
 
     @Override
-    protected long nowInMillis(boolean accurate) {
-      return nowInMillis;
+    protected long nowInNanos(boolean accurate) {
+      return nowInMillis * Clock.NANOS_IN_MILLISECOND;
     }
     
     @Override

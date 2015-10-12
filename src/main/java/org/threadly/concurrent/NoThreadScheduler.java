@@ -31,7 +31,7 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
   protected final QueueSet lowPriorityQueueSet;
   protected final QueueSet starvablePriorityQueueSet;
   private final QueueSetListener queueListener;
-  private volatile long maxWaitForLowPriorityInMs;
+  private volatile long maxWaitForLowPriorityInNanos;
   private volatile boolean tickRunning;
   private volatile boolean currentlyBlocking;
   private volatile boolean tickCanceled;
@@ -87,12 +87,20 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
   public void setMaxWaitForLowPriority(long maxWaitForLowPriorityInMs) {
     ArgumentVerifier.assertNotNegative(maxWaitForLowPriorityInMs, "maxWaitForLowPriorityInMs");
     
-    this.maxWaitForLowPriorityInMs = maxWaitForLowPriorityInMs;
+    long waitInNanos = maxWaitForLowPriorityInMs * Clock.NANOS_IN_MILLISECOND;
+    if (waitInNanos < maxWaitForLowPriorityInMs) {
+      waitInNanos = Long.MAX_VALUE;
+    }
+    this.maxWaitForLowPriorityInNanos = waitInNanos;
   }
   
   @Override
   public long getMaxWaitForLowPriority() {
-    return maxWaitForLowPriorityInMs;
+    if (maxWaitForLowPriorityInNanos == Long.MAX_VALUE) {
+      return Long.MAX_VALUE;
+    } else {
+      return maxWaitForLowPriorityInNanos / Clock.NANOS_IN_MILLISECOND;
+    }
   }
   
   @Override
@@ -113,11 +121,11 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    * @param accurate If {@code true} then time estimates are not acceptable
    * @return current time in milliseconds
    */
-  protected long nowInMillis(boolean accurate) {
+  protected long nowInNanos(boolean accurate) {
     if (accurate) {
-      return Clock.accurateForwardProgressingMillis();
+      return Clock.accurateTimeNanos();
     } else {
-      return Clock.lastKnownForwardProgressingMillis();
+      return Clock.lastKnownTimeNanos();
     }
   }
   
@@ -251,36 +259,43 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
               return 0;
             }
             TaskWrapper nextTask = getNextTask(highPriorityQueueSet, lowPriorityQueueSet, 
-                                               maxWaitForLowPriorityInMs);
+                                               maxWaitForLowPriorityInNanos);
             if (nextTask == null) {
               TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask();
               if (nextStarvableTask == null) {
                 taskNotifyLock.wait();
               } else {
                 long nextStarvableTaskDelay = nextStarvableTask.getScheduleDelay();
-                if (nextStarvableTaskDelay > 0) {
-                  taskNotifyLock.wait(nextStarvableTaskDelay);
+                if (nextStarvableTaskDelay > Clock.NANOS_IN_MILLISECOND) {
+                  taskNotifyLock.wait(nextStarvableTaskDelay / Clock.NANOS_IN_MILLISECOND);
+                } else if (nextStarvableTaskDelay > 0) {
+                  // spin till ready to run
                 } else {
                   // starvable task is ready to run, so break loop
                   break;
                 }
               }
             } else {
-              long nextTaskDelay = nextTask.getScheduleDelay();
-              if (nextTaskDelay > 0) {
+              long nextTaskDelayNanos = nextTask.getScheduleDelay();
+              if (nextTaskDelayNanos > Clock.NANOS_IN_MILLISECOND) {
                 TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask();
                 if (nextStarvableTask == null) {
-                  taskNotifyLock.wait(nextTaskDelay);
+                  taskNotifyLock.wait(nextTaskDelayNanos / Clock.NANOS_IN_MILLISECOND);
                 } else {
-                  long nextStarvableTaskDelay = nextStarvableTask.getScheduleDelay();
-                  if (nextStarvableTaskDelay > 0) {
-                    taskNotifyLock.wait(nextTaskDelay > nextStarvableTaskDelay ? 
-                                          nextStarvableTaskDelay : nextTaskDelay);
+                  long nextStarvableTaskDelayNanos = nextStarvableTask.getScheduleDelay() / Clock.NANOS_IN_MILLISECOND;
+                  if (nextStarvableTaskDelayNanos > Clock.NANOS_IN_MILLISECOND) {
+                    long nextDelayNanos = nextTaskDelayNanos > nextStarvableTaskDelayNanos ? 
+                                            nextStarvableTaskDelayNanos : nextTaskDelayNanos;                       
+                    taskNotifyLock.wait(nextDelayNanos / Clock.NANOS_IN_MILLISECOND);
+                  } else if (nextStarvableTaskDelayNanos > 0) {
+                    // spin till ready to run
                   } else {
                     // starvable task is ready to run, so break loop
                     break;
                   }
                 }
+              } else if (nextTaskDelayNanos > 0) {
+                // spin till ready to run
               } else {
                 // task is ready to run, so break loop
                 break;
@@ -304,10 +319,11 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
     OneTimeTaskWrapper result;
     if (delayInMillis == 0) {
       queueSet.addExecute((result = new NoThreadOneTimeTaskWrapper(task, queueSet.executeQueue, 
-                                                                   nowInMillis(false))));
+                                                                   nowInNanos(false))));
     } else {
       queueSet.addScheduled((result = new NoThreadOneTimeTaskWrapper(task, queueSet.scheduleQueue, 
-                                                                     nowInMillis(true) + delayInMillis)));
+                                                                     nowInNanos(true) + 
+                                                                       (delayInMillis * Clock.NANOS_IN_MILLISECOND))));
     }
     return result;
   }
@@ -325,7 +341,9 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
     QueueSet queueSet = getQueueSet(priority);
     NoThreadRecurringDelayTaskWrapper taskWrapper = 
         new NoThreadRecurringDelayTaskWrapper(task, queueSet, 
-                                              nowInMillis(true) + initialDelay, recurringDelay);
+                                              nowInNanos(true) + 
+                                                (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                              recurringDelay * Clock.NANOS_IN_MILLISECOND);
     queueSet.addScheduled(taskWrapper);
   }
 
@@ -343,7 +361,9 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
     
     NoThreadRecurringRateTaskWrapper taskWrapper = 
         new NoThreadRecurringRateTaskWrapper(task, queueSet, 
-                                             nowInMillis(true) + initialDelay, period);
+                                             nowInNanos(true) + 
+                                               (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                             period * Clock.NANOS_IN_MILLISECOND);
     queueSet.addScheduled(taskWrapper);
   }
   
@@ -381,7 +401,7 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    */
   protected TaskWrapper getNextReadyTask() {
     TaskWrapper tw = getNextTask(highPriorityQueueSet, lowPriorityQueueSet, 
-                                 maxWaitForLowPriorityInMs);
+                                 maxWaitForLowPriorityInNanos);
     if (tw == null || tw.getScheduleDelay() > 0) {
       tw = starvablePriorityQueueSet.getNextTask();
       return tw == null || tw.getScheduleDelay() > 0 ? null : tw;
@@ -440,13 +460,13 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    */
   public long getDelayTillNextTask() {
     TaskWrapper tw = getNextTask(highPriorityQueueSet, lowPriorityQueueSet, 
-                                 maxWaitForLowPriorityInMs);
+                                 maxWaitForLowPriorityInNanos);
     if (tw != null) {
-      return tw.getRunTime() - nowInMillis(true);
+      return (tw.getRunTime() - nowInNanos(true)) / Clock.NANOS_IN_MILLISECOND;
     } else {
       TaskWrapper stw = starvablePriorityQueueSet.getNextTask();
       if (stw != null) {
-        return stw.getRunTime() - nowInMillis(true);
+        return (stw.getRunTime() - nowInNanos(true)) / Clock.NANOS_IN_MILLISECOND;
       } else {
         return Long.MAX_VALUE;
       }
@@ -487,8 +507,8 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
     
     @Override
     public long getScheduleDelay() {
-      if (getRunTime() > nowInMillis(false)) {
-        return getRunTime() - nowInMillis(true);
+      if (getRunTime() > nowInNanos(false)) {
+        return getRunTime() - nowInNanos(true);
       } else {
         return 0;
       }
@@ -516,8 +536,8 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
     
     @Override
     public long getScheduleDelay() {
-      if (getRunTime() > nowInMillis(false)) {
-        return getRunTime() - nowInMillis(true);
+      if (getRunTime() > nowInNanos(false)) {
+        return getRunTime() - nowInNanos(true);
       } else {
         return 0;
       }
@@ -559,18 +579,18 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    * @since 4.3.0
    */
   protected class NoThreadRecurringDelayTaskWrapper extends NoThreadRecurringTaskWrapper {
-    protected final long recurringDelay;
+    protected final long recurringDelayNanos;
     
     protected NoThreadRecurringDelayTaskWrapper(Runnable task, QueueSet queueSet, 
-                                                long firstRunTime, long recurringDelay) {
+                                                long firstRunTime, long recurringDelayNanos) {
       super(task, queueSet, firstRunTime);
       
-      this.recurringDelay = recurringDelay;
+      this.recurringDelayNanos = recurringDelayNanos;
     }
     
     @Override
     protected void updateNextRunTime() {
-      nextRunTime = nowInMillis(true) + recurringDelay;
+      nextRunTime = nowInNanos(true) + recurringDelayNanos;
     }
   }
   
@@ -581,18 +601,18 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    * @since 4.3.0
    */
   protected class NoThreadRecurringRateTaskWrapper extends NoThreadRecurringTaskWrapper {
-    protected final long period;
+    protected final long periodNanos;
     
     protected NoThreadRecurringRateTaskWrapper(Runnable task, QueueSet queueSet, 
-                                               long firstRunTime, long period) {
+                                               long firstRunTime, long periodNanos) {
       super(task, queueSet, firstRunTime);
       
-      this.period = period;
+      this.periodNanos = periodNanos;
     }
     
     @Override
     protected void updateNextRunTime() {
-      nextRunTime += period;
+      nextRunTime += periodNanos;
     }
   }
 }

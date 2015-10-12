@@ -240,6 +240,7 @@ public class NoThreadSchedulerTest {
     assertEquals(1, runCount);
     
     assertTrue(tr.ranOnce());
+    System.out.println((runTime - scheduleTime) + ", " + DELAY_TIME);
     assertTrue((runTime - scheduleTime) >= DELAY_TIME);
   }
   

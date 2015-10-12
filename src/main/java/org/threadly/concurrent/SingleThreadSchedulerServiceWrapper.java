@@ -88,8 +88,9 @@ public class SingleThreadSchedulerServiceWrapper extends AbstractExecutorService
     QueueSet queueSet = nts.getQueueSet(nts.getDefaultPriority());
     NoThreadRecurringDelayTaskWrapper rdt = 
         nts.new NoThreadRecurringDelayTaskWrapper(lft, queueSet, 
-                                                  Clock.accurateForwardProgressingMillis() + initialDelay, 
-                                                  delayInMillis);
+                                                  Clock.accurateTimeNanos() + 
+                                                    (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                                  delayInMillis * Clock.NANOS_IN_MILLISECOND);
     queueSet.addScheduled(rdt);
     
     return new ScheduledFutureDelegate<Void>(lft, new DelayedTaskWrapper(rdt));
@@ -107,8 +108,9 @@ public class SingleThreadSchedulerServiceWrapper extends AbstractExecutorService
     QueueSet queueSet = nts.getQueueSet(nts.getDefaultPriority());
     NoThreadRecurringRateTaskWrapper rt = 
         nts.new NoThreadRecurringRateTaskWrapper(lft, queueSet, 
-                                                  Clock.accurateForwardProgressingMillis() + initialDelay, 
-                                                  periodInMillis);
+                                                  Clock.accurateTimeNanos() + 
+                                                    (initialDelay * Clock.NANOS_IN_MILLISECOND), 
+                                                  periodInMillis * Clock.NANOS_IN_MILLISECOND);
     queueSet.addScheduled(rt);
     
     return new ScheduledFutureDelegate<Void>(lft, new DelayedTaskWrapper(rt));

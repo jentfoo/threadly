@@ -164,7 +164,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   }
 
   protected static TaskWrapper getNextTask(QueueSet highPriorityQueueSet, QueueSet lowPriorityQueueSet, 
-                                           long maxWaitForLowPriorityInMs) {
+                                           long maxWaitForLowPriorityInNanos) {
     TaskWrapper nextHighPriorityTask = highPriorityQueueSet.getNextTask();
     TaskWrapper nextLowPriorityTask = lowPriorityQueueSet.getNextTask();
     if (nextLowPriorityTask == null) {
@@ -187,8 +187,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
         // At this point there may or may not have been a single clock invocation to check if the 
         // high priority task was ready (if it was known ready, none was invoked)
         // because of that we _may_ have to invoke the clock here
-        Clock.lastKnownForwardProgressingMillis() - nextLowPriorityTask.getRunTime() > maxWaitForLowPriorityInMs || 
-        Clock.accurateForwardProgressingMillis() - nextLowPriorityTask.getRunTime() > maxWaitForLowPriorityInMs) {
+        Clock.lastKnownTimeNanos() - nextLowPriorityTask.getRunTime() > maxWaitForLowPriorityInNanos || 
+        Clock.accurateTimeNanos() - nextLowPriorityTask.getRunTime() > maxWaitForLowPriorityInNanos) {
       return nextLowPriorityTask;
     } else {
       // task is ready to run, low priority is also ready, but has not been waiting long enough
@@ -499,8 +499,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * @return delay in milliseconds till task can be run
      */
     public long getScheduleDelay() {
-      if (getRunTime() > Clock.lastKnownForwardProgressingMillis()) {
-        return getRunTime() - Clock.accurateForwardProgressingMillis();
+      if (getRunTime() > Clock.lastKnownTimeNanos()) {
+        return getRunTime() - Clock.accurateTimeNanos();
       } else {
         return 0;
       }
@@ -641,18 +641,18 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    * @since 3.1.0
    */
   protected static class RecurringDelayTaskWrapper extends RecurringTaskWrapper {
-    protected final long recurringDelay;
+    protected final long recurringDelayNanos;
     
     protected RecurringDelayTaskWrapper(Runnable task, QueueSet queueSet, 
-                                        long firstRunTime, long recurringDelay) {
+                                        long firstRunTime, long recurringDelayNanos) {
       super(task, queueSet, firstRunTime);
       
-      this.recurringDelay = recurringDelay;
+      this.recurringDelayNanos = recurringDelayNanos;
     }
     
     @Override
     protected void updateNextRunTime() {
-      nextRunTime = Clock.accurateForwardProgressingMillis() + recurringDelay;
+      nextRunTime = Clock.accurateTimeNanos() + recurringDelayNanos;
     }
   }
   
@@ -663,18 +663,18 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    * @since 3.1.0
    */
   protected static class RecurringRateTaskWrapper extends RecurringTaskWrapper {
-    protected final long period;
+    protected final long periodNanos;
     
     protected RecurringRateTaskWrapper(Runnable task, QueueSet queueSet, 
-                                       long firstRunTime, long period) {
+                                       long firstRunTime, long periodNanos) {
       super(task, queueSet, firstRunTime);
       
-      this.period = period;
+      this.periodNanos = periodNanos;
     }
     
     @Override
     protected void updateNextRunTime() {
-      nextRunTime += period;
+      nextRunTime += periodNanos;
     }
   }
   

@@ -358,7 +358,8 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
     AbstractPrioritySchedulerFactory priorityFactory = getAbstractPrioritySchedulerFactory();
     final AtomicBoolean testRunning = new AtomicBoolean(true);
     try {
-      final AbstractPriorityScheduler scheduler = priorityFactory.makeAbstractPriorityScheduler(1, TaskPriority.High, DELAY_TIME);
+      final AbstractPriorityScheduler scheduler = priorityFactory.makeAbstractPriorityScheduler(1, TaskPriority.High, 
+                                                                                                DELAY_TIME);
       
       new Runnable() {
         @Override

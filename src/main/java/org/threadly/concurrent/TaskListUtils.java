@@ -16,7 +16,7 @@ class TaskListUtils {
   /**
    * Counterpart to {@link org.threadly.util.ListUtils#getInsertionEndIndex(List, long, boolean)}.  
    * Time argument should be in an absolute time in reference to 
-   * {@link org.threadly.util.Clock#accurateForwardProgressingMillis()}.
+   * {@link org.threadly.util.Clock#accurateTimeNanos()}.
    * 
    * @param list List to examine to find insertion index from
    * @param insertionRunTime Absolute time for insertion

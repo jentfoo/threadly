@@ -559,7 +559,7 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
   public List<Runnable> getRunnablesRunningOverTime(long timeInMs) {
     ArrayList<Runnable> result = new ArrayList<Runnable>();
     
-    long now = Clock.accurateForwardProgressingMillis();
+    long now = Clock.accurateTimeNanos();
     Iterator<Entry<Wrapper, Long>> it = statsManager.runningTasks.entrySet().iterator();
     while (it.hasNext()) {
       Entry<Wrapper, Long> entry = it.next();
@@ -586,12 +586,12 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
   public List<Callable<?>> getCallablesRunningOverTime(long timeInMs) {
     ArrayList<Callable<?>> result = new ArrayList<Callable<?>>();
     
-    long now = Clock.accurateForwardProgressingMillis();
+    long now = Clock.accurateTimeNanos();
     Iterator<Entry<Wrapper, Long>> it = statsManager.runningTasks.entrySet().iterator();
     while (it.hasNext()) {
       Entry<Wrapper, Long> entry = it.next();
       if (entry.getKey().callable) {
-        if (now - entry.getValue() >= timeInMs) {
+        if (now - entry.getValue() >= timeInMs * Clock.NANOS_IN_MILLISECOND) {
           result.add(((CallableStatWrapper<?>)entry.getKey()).toRun);
         }
       }
@@ -611,11 +611,11 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
   public int getQtyRunningOverTime(long timeInMs) {
     int result = 0;
     
-    long now = Clock.accurateForwardProgressingMillis();
+    long now = Clock.accurateTimeNanos();
     Iterator<Long> it = statsManager.runningTasks.values().iterator();
     while (it.hasNext()) {
       Long startTime = it.next();
-      if (now - startTime >= timeInMs) {
+      if (now - startTime >= timeInMs * Clock.NANOS_IN_MILLISECOND) {
         result++;
       }
     }
@@ -669,7 +669,7 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
      * @param taskWrapper Wrapper that is about to be executed
      */
     protected void trackTaskStart(Wrapper taskWrapper) {
-      runningTasks.put(taskWrapper, taskWrapper.startTime = Clock.accurateForwardProgressingMillis());
+      runningTasks.put(taskWrapper, taskWrapper.startTime = Clock.accurateTimeNanos());
       
       switch (taskWrapper.priority) {
         case High:
@@ -692,9 +692,9 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
      * @param taskWrapper wrapper for task that completed
      */
     protected void trackTaskFinish(Wrapper taskWrapper) {
-      long finishTime = Clock.accurateForwardProgressingMillis();
+      long finishTime = Clock.accurateTimeNanos();
       synchronized (runTimes.getModificationLock()) {
-        runTimes.add(finishTime - taskWrapper.startTime);
+        runTimes.add((finishTime - taskWrapper.startTime) / Clock.NANOS_IN_MILLISECOND);
         trimWindow(runTimes);
       }
       runningTasks.remove(taskWrapper);
@@ -767,7 +767,7 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
     public void nextTask(TaskWrapper task) {
       // may not be a wrapper for internal tasks like shutdown
       if (task.task instanceof Wrapper) {
-        long taskDelay = task.getRunTime() - Clock.lastKnownForwardProgressingMillis();
+        long taskDelay = task.getRunTime() - Clock.lastKnownTimeNanos();
         Wrapper statWrapper = (Wrapper)task.task;
         ConcurrentArrayList<Long> priorityStats;
         switch (statWrapper.priority) {
