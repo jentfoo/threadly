@@ -8,7 +8,6 @@ import org.junit.Test;
 import org.threadly.concurrent.AbstractPriorityScheduler.QueueManager;
 import org.threadly.concurrent.PriorityScheduler.Worker;
 import org.threadly.concurrent.PriorityScheduler.WorkerPool;
-import org.threadly.test.concurrent.TestCondition;
 
 @SuppressWarnings("javadoc")
 public class PrioritySchedulerWorkerPoolTest {
@@ -84,11 +83,6 @@ public class PrioritySchedulerWorkerPoolTest {
     int corePoolSize = 5;
     workerPool.setPoolSize(corePoolSize);
     
-    // there must always be at least one thread
-    assertEquals(1, workerPool.getCurrentPoolSize());
-    
-    workerPool.prestartAllThreads();
-    
     assertEquals(corePoolSize, workerPool.getCurrentPoolSize());
   }
   
@@ -96,25 +90,9 @@ public class PrioritySchedulerWorkerPoolTest {
   public void workerIdleTest() {
     final Worker w = new Worker(workerPool, workerPool.threadFactory);
     w.start();
-
-    // wait for worker to become idle
-    new TestCondition() {
-      @Override
-      public boolean get() {
-        return workerPool.idleWorker.get() == w;
-      }
-    }.blockTillTrue();
     
     workerPool.startShutdown();
     workerPool.finishShutdown();
-    
-    // verify idle worker is gone
-    new TestCondition() {
-      @Override
-      public boolean get() {
-        return workerPool.idleWorker.get() == null;
-      }
-    }.blockTillTrue();
     
     // should return immediately now that we are shut down
     workerPool.workerIdle(new Worker(workerPool, workerPool.threadFactory));

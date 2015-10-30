@@ -147,6 +147,7 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
       result.getQueueManager().getQueueSet(TaskPriority.High)
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
+      assertEquals(1, result.getActiveTaskCount());
       
       assertEquals(0, result.getQueuedTaskCount(TaskPriority.Starvable));
 

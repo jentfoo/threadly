@@ -132,8 +132,7 @@ public class PrioritySchedulerTest extends AbstractPrioritySchedulerTest {
     PrioritySchedulerServiceFactory factory = getPrioritySchedulerFactory();
     PriorityScheduler scheduler = factory.makePriorityScheduler(1);
     try {
-      // verify nothing at the start
-      assertEquals(0, scheduler.getCurrentPoolSize());
+      assertEquals(1, scheduler.getCurrentPoolSize());
       
       TestRunnable tr = new TestRunnable();
       scheduler.execute(tr);
@@ -202,13 +201,6 @@ public class PrioritySchedulerTest extends AbstractPrioritySchedulerTest {
       assertTrue(future.cancel(true));
       interruptSentAV.waitForTest(); // verify thread was interrupted as expected
       
-      // verify worker was returned to pool
-      new TestCondition() {
-        @Override
-        public boolean get() {
-          return scheduler.workerPool.idleWorker.get() != null;
-        }
-      }.blockTillTrue();
       // verify pool size is still correct
       assertEquals(1, scheduler.getCurrentPoolSize());
       
@@ -495,45 +487,6 @@ public class PrioritySchedulerTest extends AbstractPrioritySchedulerTest {
 
       assertEquals(1, scheduler.taskQueueManager.highPriorityQueueSet.scheduleQueue.size());
       assertEquals(1, scheduler.taskQueueManager.lowPriorityQueueSet.scheduleQueue.size());
-    } finally {
-      factory.shutdown();
-    }
-  }
-
-  @Test
-  public void scheduleLaterThenSoonerTest() {
-    // This test is focused around the scheduling defect fixed in 4.4.1
-    // The condition hit was where we would park for one scheduled task, then a future task 
-    // would not get executed in time because the first parked thread was not woken up
-
-    PrioritySchedulerServiceFactory factory = getPrioritySchedulerFactory();
-    final PriorityScheduler scheduler = factory.makePriorityScheduler(2);
-    try {
-      // schedule one task a ways out
-      scheduler.schedule(DoNothingRunnable.instance(), 1000 * 60 * 10);
-      // ensure first thread has blocked
-      new TestCondition() {
-        @Override
-        public boolean get() {
-          return scheduler.workerPool.idleWorker.get() != null;
-        }
-      }.blockTillTrue();
-      
-      // start second thread
-      scheduler.prestartAllThreads();
-      // ensure second thread has blocked
-      new TestCondition() {
-        @Override
-        public boolean get() {
-          return scheduler.workerPool.idleWorker.get().nextIdleWorker != null;
-        }
-      }.blockTillTrue();
-      
-      // schedule soon to run task
-      TestRunnable tr = new TestRunnable();
-      scheduler.schedule(tr, 10);
-      
-      tr.blockTillStarted();
     } finally {
       factory.shutdown();
     }

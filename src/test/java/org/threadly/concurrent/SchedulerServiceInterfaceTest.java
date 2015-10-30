@@ -109,7 +109,12 @@ public abstract class SchedulerServiceInterfaceTest extends SubmitterSchedulerIn
     final SchedulerService scheduler = factory.makeSchedulerService(1, false);
     try {
       // verify nothing at the start
-      assertEquals(0, scheduler.getActiveTaskCount());
+      new TestCondition() {
+        @Override
+        public boolean get() {
+          return scheduler.getActiveTaskCount() == 0;
+        }
+      }.blockTillTrue();
       
       BlockingTestRunnable btr = new BlockingTestRunnable();
       scheduler.execute(btr);
@@ -138,7 +143,12 @@ public abstract class SchedulerServiceInterfaceTest extends SubmitterSchedulerIn
     final SchedulerService scheduler = factory.makeSchedulerService(1, false);
     try {
       // verify nothing at the start
-      assertEquals(0, scheduler.getCurrentRunningCount());
+      new TestCondition() {
+        @Override
+        public boolean get() {
+          return scheduler.getCurrentRunningCount() == 0;
+        }
+      }.blockTillTrue();
       
       BlockingTestRunnable btr = new BlockingTestRunnable();
       scheduler.execute(btr);
