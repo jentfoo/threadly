@@ -10,6 +10,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.junit.After;
 import org.junit.Before;
@@ -35,7 +36,7 @@ public class ConcurrentArrayListTest {
   @SuppressWarnings("unused")
   @Test (expected = IllegalArgumentException.class)
   public void constructorFail() {
-    new ConcurrentArrayList<String>(null, new Object());
+    new ConcurrentArrayList<String>(null, new ReentrantLock());
     fail("Exception should have thrown");
   }
   
@@ -46,14 +47,6 @@ public class ConcurrentArrayListTest {
     
     assertNotNull(testStr);
     assertTrue(testStr.length() > 2);
-  }
-  
-  @Test
-  public void getModificationLockTest() {
-    Object testLock = new Object();
-    ConcurrentArrayList<String> testList = new ConcurrentArrayList<String>(testLock);
-    
-    assertTrue(testLock == testList.getModificationLock());
   }
   
   @Test

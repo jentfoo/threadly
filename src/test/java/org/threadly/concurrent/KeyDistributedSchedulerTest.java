@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.Lock;
 
 import org.junit.After;
 import org.junit.Before;
@@ -31,7 +32,7 @@ public class KeyDistributedSchedulerTest {
   }
   
   private PriorityScheduler scheduler;
-  private Object agentLock;
+  private Lock agentLock;
   private KeyDistributedScheduler distributor;
   
   @Before
@@ -39,8 +40,7 @@ public class KeyDistributedSchedulerTest {
     scheduler = new StrictPriorityScheduler(PARALLEL_LEVEL * 2);
     StripedLock sLock = new StripedLock(1);
     agentLock = sLock.getLock(null);  // there should be only one lock
-    distributor = new KeyDistributedScheduler(scheduler, sLock, 
-                                              Integer.MAX_VALUE, false);
+    distributor = new KeyDistributedScheduler(scheduler, sLock, Integer.MAX_VALUE, false);
   }
   
   @After
@@ -55,7 +55,8 @@ public class KeyDistributedSchedulerTest {
     final List<TDRunnable> runs = new ArrayList<TDRunnable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
     
     // hold agent lock to prevent execution till ready
-    synchronized (agentLock) {
+    agentLock.lock();
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
         ThreadContainer tc = new ThreadContainer();
         TDRunnable previous = null;
@@ -67,6 +68,8 @@ public class KeyDistributedSchedulerTest {
           previous = tr;
         }
       }
+    } finally {
+      agentLock.unlock();
     }
     
     return runs;
@@ -229,7 +232,8 @@ public class KeyDistributedSchedulerTest {
     List<TDCallable> runs = new ArrayList<TDCallable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
     
     // hold agent lock to avoid execution till all are submitted
-    synchronized (agentLock) {
+    agentLock.lock();
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
         ThreadContainer tc = new ThreadContainer();
         TDCallable previous = null;
@@ -241,6 +245,8 @@ public class KeyDistributedSchedulerTest {
           previous = tr;
         }
       }
+    } finally {
+      agentLock.unlock();
     }
     
     Iterator<TDCallable> it = runs.iterator();
@@ -257,7 +263,8 @@ public class KeyDistributedSchedulerTest {
     List<TDCallable> runs = new ArrayList<TDCallable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
     
     // hold agent lock to avoid execution till all are submitted
-    synchronized (agentLock) {
+    agentLock.lock();
+    try {
       for (int i = 0; i < PARALLEL_LEVEL; i++) {
         ThreadContainer tc = new ThreadContainer();
         TDCallable previous = null;
@@ -269,6 +276,8 @@ public class KeyDistributedSchedulerTest {
           previous = tr;
         }
       }
+    } finally {
+      agentLock.unlock();
     }
     
     Iterator<TDCallable> it = runs.iterator();

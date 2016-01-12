@@ -7,6 +7,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.concurrent.ContainerHelper;
 import org.threadly.util.ExceptionUtils;
@@ -25,7 +26,7 @@ import org.threadly.util.Pair;
  * @since 2.2.0 (existed since 1.1.0 as org.threadly.concurrent.ListenerHelper)
  */
 public class RunnableListenerHelper {
-  protected final Object listenersLock;
+  protected final ReentrantLock listenersLock;
   protected final boolean callOnce;
   protected final AtomicBoolean done;
   protected List<Pair<Runnable, Executor>> listeners;
@@ -37,7 +38,7 @@ public class RunnableListenerHelper {
    * @param callListenersOnce {@code true} if listeners should only be called once
    */
   public RunnableListenerHelper(boolean callListenersOnce) {
-    this.listenersLock = new Object();
+    this.listenersLock = new ReentrantLock();
     this.callOnce = callListenersOnce;
     this.done = new AtomicBoolean(false);
     this.listeners = null;
@@ -50,12 +51,15 @@ public class RunnableListenerHelper {
    * @return A non-null collection of currently subscribed listeners
    */
   public Collection<Runnable> getSubscribedListeners() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       if (listeners == null) {
         return Collections.emptyList();
       } else {
         return Collections.unmodifiableList(Pair.collectLeft(listeners));
       }
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -97,7 +101,8 @@ public class RunnableListenerHelper {
    * call listeners once design).
    */
   protected void doCallListeners() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       if (listeners == null) {
         return;
       }
@@ -111,6 +116,8 @@ public class RunnableListenerHelper {
       if (callOnce) {
         listeners = null;
       }
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -174,8 +181,9 @@ public class RunnableListenerHelper {
     
     boolean runListener = done.get();
     if (! runListener) {
-      boolean addingFromCallingThread = Thread.holdsLock(listenersLock);
-      synchronized (listenersLock) {
+      boolean addingFromCallingThread = listenersLock.isHeldByCurrentThread();
+      listenersLock.lock();
+      try {
         // done should only be set to true if we are only calling listeners once
         if (! (runListener = done.get())) {
           if (addingFromCallingThread) {
@@ -194,6 +202,8 @@ public class RunnableListenerHelper {
             listeners.add(new Pair<Runnable, Executor>(listener, executor));
           }
         }
+      } finally {
+        listenersLock.unlock();
       }
     }
     
@@ -210,8 +220,9 @@ public class RunnableListenerHelper {
    * @return {@code true} if the listener was removed
    */
   public boolean removeListener(Runnable listener) {
-    boolean removingFromCallingThread = Thread.holdsLock(listenersLock);
-    synchronized (listenersLock) {
+    boolean removingFromCallingThread = listenersLock.isHeldByCurrentThread();
+    listenersLock.lock();
+    try {
       if (listeners == null) {
         return false;
       }
@@ -228,6 +239,8 @@ public class RunnableListenerHelper {
       }
       
       return false;
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -235,8 +248,11 @@ public class RunnableListenerHelper {
    * Removes all listeners currently registered. 
    */
   public void clearListeners() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       listeners = null;
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -248,8 +264,11 @@ public class RunnableListenerHelper {
    * @return number of listeners registered to be called
    */
   public int registeredListenerCount() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       return listeners == null ? 0 : listeners.size();
+    } finally {
+      listenersLock.unlock();
     }
   }
 }

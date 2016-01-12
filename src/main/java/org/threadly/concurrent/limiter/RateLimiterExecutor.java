@@ -1,6 +1,7 @@
 package org.threadly.concurrent.limiter;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.concurrent.AbstractSubmitterExecutor;
 import org.threadly.concurrent.DoNothingRunnable;
@@ -33,7 +34,7 @@ import org.threadly.util.Clock;
 public class RateLimiterExecutor extends AbstractSubmitterExecutor {
   protected final SimpleSchedulerInterface scheduler;
   protected final double permitsPerSecond;
-  protected final Object permitLock;
+  protected final ReentrantLock permitLock;
   private double lastScheduleTime;
   
   /**
@@ -50,7 +51,7 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
     
     this.scheduler = scheduler;
     this.permitsPerSecond = permitsPerSecond;
-    this.permitLock = new Object();
+    this.permitLock = new ReentrantLock();
     this.lastScheduleTime = Clock.lastKnownForwardProgressingMillis();
   }
   
@@ -62,8 +63,11 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
    * @return minimum delay in milliseconds for the next task to be provided
    */
   public int getMinimumDelay() {
-    synchronized (permitLock) {
+    permitLock.lock();
+    try {
       return (int)Math.max(0, lastScheduleTime - Clock.lastKnownForwardProgressingMillis());
+    } finally {
+      permitLock.unlock();
     }
   }
   
@@ -183,7 +187,8 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
    */
   protected void doExecute(double permits, Runnable task) {
     double effectiveDelay = (permits / permitsPerSecond) * 1000;
-    synchronized (permitLock) {
+    permitLock.lock();
+    try {
       double scheduleDelay = lastScheduleTime - Clock.accurateForwardProgressingMillis();
       if (scheduleDelay < 1) {
         if (scheduleDelay < 0) {
@@ -196,6 +201,8 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
         lastScheduleTime += effectiveDelay;
         scheduler.schedule(task, (long)scheduleDelay);
       }
+    } finally {
+      permitLock.unlock();
     }
   }
 }

@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.concurrent.limiter.PrioritySchedulerLimiter;
 import org.threadly.util.AbstractService;
@@ -602,8 +603,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    */
   protected static class WorkerPool implements QueueSetListener {
     protected final ThreadFactory threadFactory;
-    protected final Object poolSizeChangeLock;
-    protected final Object idleWorkerDequeLock;
+    protected final ReentrantLock poolSizeChangeLock;
+    protected final ReentrantLock idleWorkerDequeLock;
     protected final AtomicInteger idleWorkerCount;
     protected final AtomicReference<Worker> idleWorker;
     protected final AtomicInteger currentPoolSize;
@@ -620,8 +621,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         threadFactory = new ConfigurableThreadFactory(PriorityScheduler.class.getSimpleName() + "-", true);
       }
       
-      poolSizeChangeLock = new Object();
-      idleWorkerDequeLock = new Object();
+      poolSizeChangeLock = new ReentrantLock();
+      idleWorkerDequeLock = new ReentrantLock();
       idleWorkerCount = new AtomicInteger(0);
       idleWorker = new AtomicReference<Worker>(null);
       currentPoolSize = new AtomicInteger(0);
@@ -758,7 +759,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     public void setPoolSize(int newPoolSize) {
       ArgumentVerifier.assertGreaterThanZero(newPoolSize, "newPoolSize");
       
-      synchronized (poolSizeChangeLock) {
+      poolSizeChangeLock.lock();
+      try {
         boolean poolSizeIncrease = newPoolSize > this.maxPoolSize;
         
         this.maxPoolSize = newPoolSize;
@@ -776,6 +778,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
             LockSupport.unpark(w.thread);
           }
         }
+      } finally {
+        poolSizeChangeLock.unlock();
       }
     }
 
@@ -857,7 +861,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
        * outside of the workers thread.  If we don't synchronize here, we may end up 
        * having workers disappear from the chain when the reference is nulled out.
        */
-      synchronized (idleWorkerDequeLock) {
+      idleWorkerDequeLock.lock();
+      try {
         Worker holdingWorker = idleWorker.get();
         if (holdingWorker == worker) {
           if (idleWorker.compareAndSet(worker, worker.nextIdleWorker)) {
@@ -879,6 +884,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         holdingWorker.nextIdleWorker = worker.nextIdleWorker;
         // now out of the queue, lets clean up our reference
         worker.nextIdleWorker = null;
+      } finally {
+        idleWorkerDequeLock.unlock();
       }
     }
 

@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.util.ArgumentVerifier;
 import org.threadly.util.ExceptionUtils;
@@ -43,7 +44,7 @@ public class ListenerHelper<T> {
   }
   
   protected final T proxyInstance;
-  protected final Object listenersLock;
+  protected final ReentrantLock listenersLock;
   protected List<Pair<T, Executor>> listeners;
   
   /**
@@ -59,7 +60,7 @@ public class ListenerHelper<T> {
     }
     
     proxyInstance = makeProxyInstance(listenerInterface);
-    listenersLock = new Object();
+    listenersLock = new ReentrantLock();
   }
   
   /**
@@ -85,12 +86,15 @@ public class ListenerHelper<T> {
    * @return A non-null collection of currently subscribed listeners
    */
   public Collection<T> getSubscribedListeners() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       if (listeners == null) {
         return Collections.emptyList();
       } else {
         return Collections.unmodifiableList(Pair.collectLeft(listeners));
       }
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -140,8 +144,9 @@ public class ListenerHelper<T> {
       return;
     }
     
-    boolean addingFromCallingThread = Thread.holdsLock(listenersLock);
-    synchronized (listenersLock) {
+    boolean addingFromCallingThread = listenersLock.isHeldByCurrentThread();
+    listenersLock.lock();
+    try {
       if (addingFromCallingThread) {
         // we must create a new instance of listeners to prevent a ConcurrentModificationException
         // we know at this point that listeners can not be null
@@ -157,6 +162,8 @@ public class ListenerHelper<T> {
         }
         listeners.add(new Pair<T, Executor>(listener, executor));
       }
+    } finally {
+      listenersLock.unlock();
     }
   }
 
@@ -167,8 +174,9 @@ public class ListenerHelper<T> {
    * @return {@code true} if the listener was removed
    */
   public boolean removeListener(T listener) {
-    boolean removingFromCallingThread = Thread.holdsLock(listenersLock);
-    synchronized (listenersLock) {
+    boolean removingFromCallingThread = listenersLock.isHeldByCurrentThread();
+    listenersLock.lock();
+    try {
       if (listeners == null) {
         return false;
       }
@@ -185,6 +193,8 @@ public class ListenerHelper<T> {
       }
       
       return false;
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -192,8 +202,11 @@ public class ListenerHelper<T> {
    * Removes all listener currently registered. 
    */
   public void clearListeners() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       listeners = null;
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -203,8 +216,11 @@ public class ListenerHelper<T> {
    * @return number of listeners registered to be called
    */
   public int registeredListenerCount() {
-    synchronized (listenersLock) {
+    listenersLock.lock();
+    try {
       return listeners == null ? 0 : listeners.size();
+    } finally {
+      listenersLock.unlock();
     }
   }
   
@@ -244,7 +260,8 @@ public class ListenerHelper<T> {
      * @param args Arguments to provide to each listener's invocation
      */
     protected void callListeners(final Method method, final Object[] args) {
-      synchronized (listenersLock) {
+      listenersLock.lock();
+      try {
         if (listeners != null) {
           Iterator<Pair<T, Executor>> it = listeners.iterator();
           while (it.hasNext()) {
@@ -261,6 +278,8 @@ public class ListenerHelper<T> {
             }
           }
         }
+      } finally {
+        listenersLock.unlock();
       }
     }
     

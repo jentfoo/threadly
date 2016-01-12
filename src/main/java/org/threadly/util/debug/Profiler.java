@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.SettableListenableFuture;
@@ -57,7 +58,7 @@ public class Profiler {
   }
   
   protected final File outputFile;
-  protected final Object startStopLock;
+  protected final ReentrantLock startStopLock;
   protected final ProfileStorage pStore;
   protected final List<SettableListenableFuture<String>> stopFutures; // guarded by startStopLock
   
@@ -117,7 +118,7 @@ public class Profiler {
    */
   protected Profiler(File outputFile, ProfileStorage pStore) {
     this.outputFile = outputFile;
-    this.startStopLock = new Object();
+    this.startStopLock = new ReentrantLock();
     this.pStore = pStore;
     this.stopFutures = new ArrayList<SettableListenableFuture<String>>(2);
   }
@@ -261,7 +262,8 @@ public class Profiler {
    */
   private void start(Executor executor, final long sampleDurationInMillis, 
                      SettableListenableFuture<String> completionFuture) {
-    synchronized (startStopLock) {
+    startStopLock.lock();
+    try {
       if (sampleDurationInMillis > 0) {
         // stop in case it's running, this allows us to simplify our start logic
         stop();
@@ -326,6 +328,8 @@ public class Profiler {
           };
         }
       }
+    } finally {
+      startStopLock.unlock();
     }
   }
   
@@ -335,7 +339,8 @@ public class Profiler {
    * {@link #dump()} call after it has stopped.
    */
   public void stop() {
-    synchronized (startStopLock) {
+    startStopLock.lock();
+    try {
       Thread runningThread = pStore.collectorThread.get();
       if (runningThread != null) {
         runningThread.interrupt();
@@ -366,6 +371,8 @@ public class Profiler {
           }
         }
       }
+    } finally {
+      startStopLock.unlock();
     }
   }
   

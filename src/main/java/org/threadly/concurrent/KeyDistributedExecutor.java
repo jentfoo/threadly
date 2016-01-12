@@ -9,6 +9,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
 
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.ListenableFutureTask;
@@ -242,14 +243,14 @@ public class KeyDistributedExecutor {
     if (accurateQueueSize) {
       wFactory = new WorkerFactory() {
         @Override
-        public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask) {
+        public TaskQueueWorker build(Object mapKey, Lock workerLock, Runnable firstTask) {
           return new StatisticWorker(mapKey, workerLock, firstTask);
         }
       };
     } else {
       wFactory = new WorkerFactory() {
         @Override
-        public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask) {
+        public TaskQueueWorker build(Object mapKey, Lock workerLock, Runnable firstTask) {
           return new TaskQueueWorker(mapKey, workerLock, firstTask);
         }
       };
@@ -380,8 +381,9 @@ public class KeyDistributedExecutor {
    */
   protected void addTask(Object threadKey, Runnable task, Executor executor) {
     TaskQueueWorker worker;
-    Object workerLock = sLock.getLock(threadKey);
-    synchronized (workerLock) {
+    Lock workerLock = sLock.getLock(threadKey);
+    workerLock.lock();
+    try {
       worker = taskWorkers.get(threadKey);
       if (worker == null) {
         worker = wFactory.build(threadKey, workerLock, task);
@@ -391,6 +393,8 @@ public class KeyDistributedExecutor {
         // return so we wont start worker
         return;
       }
+    } finally {
+      workerLock.unlock();
     }
 
     // must run execute outside of lock
@@ -493,7 +497,7 @@ public class KeyDistributedExecutor {
    * @since 1.2.0
    */
   private interface WorkerFactory {
-    public TaskQueueWorker build(Object mapKey, Object workerLock, Runnable firstTask);
+    public TaskQueueWorker build(Object mapKey, Lock workerLock, Runnable firstTask);
   }
   
   /**
@@ -505,12 +509,12 @@ public class KeyDistributedExecutor {
    */
   protected class TaskQueueWorker implements Runnable {
     protected final Object mapKey;
-    protected final Object workerLock;
+    protected final Lock workerLock;
     // we treat the first task special to attempt to avoid constructing the ArrayDeque
     protected volatile Runnable firstTask;
     protected Queue<Runnable> queue;  // locked around workerLock
     
-    protected TaskQueueWorker(Object mapKey, Object workerLock, Runnable firstTask) {
+    protected TaskQueueWorker(Object mapKey, Lock workerLock, Runnable firstTask) {
       this.mapKey = mapKey;
       this.workerLock = workerLock;
       this.queue = null;
@@ -524,8 +528,11 @@ public class KeyDistributedExecutor {
      */
     public int getQueueSize() {
       // the default implementation is very inaccurate
-      synchronized (workerLock) {
+      workerLock.lock();
+      try {
         return (firstTask == null ? 0 : 1) + (queue == null ? 0 : queue.size());
+      } finally {
+        workerLock.unlock();
       }
     }
     
@@ -568,7 +575,8 @@ public class KeyDistributedExecutor {
       
       while (true) {
         Queue<Runnable> nextQueue;
-        synchronized (workerLock) {
+        workerLock.lock();
+        try {
           if (queue == null) {  // nothing left to run
             taskWorkers.remove(mapKey);
             return;
@@ -598,6 +606,8 @@ public class KeyDistributedExecutor {
              */
             return;
           }
+        } finally {
+          workerLock.unlock();
         }
         
         for (Runnable r : nextQueue) {
@@ -617,7 +627,7 @@ public class KeyDistributedExecutor {
   protected class StatisticWorker extends TaskQueueWorker {
     private final AtomicInteger queueSize;
     
-    protected StatisticWorker(Object mapKey, Object workerLock, Runnable firstTask) {
+    protected StatisticWorker(Object mapKey, Lock workerLock, Runnable firstTask) {
       super(mapKey, workerLock, firstTask);
       
       queueSize = new AtomicInteger(1);

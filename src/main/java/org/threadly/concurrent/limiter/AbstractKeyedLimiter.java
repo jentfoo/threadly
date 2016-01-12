@@ -6,6 +6,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
 
 import org.threadly.concurrent.AbstractSubmitterExecutor;
 import org.threadly.concurrent.RunnableCallableAdapter;
@@ -188,8 +189,9 @@ abstract class AbstractKeyedLimiter<T extends ExecutorLimiter> {
    */
   protected LimiterContainer getLimiterContainer(Object taskKey) {
     LimiterContainer lc;
-    Object lock = sLock.getLock(taskKey);
-    synchronized (lock) {
+    Lock lock = sLock.getLock(taskKey);
+    lock.lock();
+    try {
       lc = currentLimiters.get(taskKey);
       if (lc == null) {
         lc = new LimiterContainer(taskKey, makeLimiter(subPoolName + 
@@ -198,6 +200,8 @@ abstract class AbstractKeyedLimiter<T extends ExecutorLimiter> {
       }
       // must increment while in lock to prevent early removal
       lc.handlingTasks.incrementAndGet();
+    } finally {
+      lock.unlock();
     }
     
     return lc;
@@ -275,11 +279,15 @@ abstract class AbstractKeyedLimiter<T extends ExecutorLimiter> {
           wrappedTask.run();
         } finally {
           if (handlingTasks.decrementAndGet() == 0) {
-            synchronized (sLock.getLock(taskKey)) {
+            Lock lock = sLock.getLock(taskKey);
+            lock.lock();
+            try {
               // must verify removal in lock so that map gets are atomic with removals
               if (handlingTasks.get() == 0) {
                 currentLimiters.remove(taskKey);
               }
+            } finally {
+              lock.unlock();
             }
           }
         }

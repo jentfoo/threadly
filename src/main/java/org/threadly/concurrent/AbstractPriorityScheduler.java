@@ -286,10 +286,13 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      */
     public void addScheduled(TaskWrapper task) {
       int insertionIndex;
-      synchronized (scheduleQueue.getModificationLock()) {
+      scheduleQueue.lockList();
+      try {
         insertionIndex = TaskListUtils.getInsertionEndIndex(scheduleQueue, task.getRunTime());
         
         scheduleQueue.add(insertionIndex, task);
+      } finally {
+        scheduleQueue.unlockList();
       }
       
       if (insertionIndex == 0) {
@@ -307,7 +310,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      */
     public void reschedule(RecurringTaskWrapper task) {
       int insertionIndex = -1;
-      synchronized (scheduleQueue.getModificationLock()) {
+      scheduleQueue.lockList();
+      try {
         int currentIndex = scheduleQueue.lastIndexOf(task);
         if (currentIndex > 0) {
           insertionIndex = TaskListUtils.getInsertionEndIndex(scheduleQueue, task.getPureRunTime());
@@ -320,6 +324,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
         // we can only update executing AFTER the reposition has finished
         task.executing = false;
         task.executeFlipCounter++;  // increment again to indicate execute state change
+      } finally {
+        scheduleQueue.unlockList();
       }
       
       // need to unpark even if the task is not ready, otherwise we may get stuck on an infinite park
@@ -345,7 +351,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           }
         }
       }
-      synchronized (scheduleQueue.getModificationLock()) {
+      scheduleQueue.lockList();
+      try {
         Iterator<? extends TaskWrapper> it = scheduleQueue.iterator();
         while (it.hasNext()) {
           TaskWrapper tw = it.next();
@@ -356,6 +363,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
             return true;
           }
         }
+      } finally {
+        scheduleQueue.unlockList();
       }
       
       return false;
@@ -378,7 +387,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           }
         }
       }
-      synchronized (scheduleQueue.getModificationLock()) {
+      scheduleQueue.lockList();
+      try {
         Iterator<? extends TaskWrapper> it = scheduleQueue.iterator();
         while (it.hasNext()) {
           TaskWrapper tw = it.next();
@@ -389,6 +399,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
             return true;
           }
         }
+      } finally {
+        scheduleQueue.unlockList();
       }
       
       return false;
@@ -407,8 +419,11 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
 
     public void drainQueueInto(List<TaskWrapper> removedTasks) {
       clearQueue(executeQueue, removedTasks);
-      synchronized (scheduleQueue.getModificationLock()) {
+      scheduleQueue.lockList();
+      try {
         clearQueue(scheduleQueue, removedTasks);
+      } finally {
+        scheduleQueue.unlockList();
       }
     }
   
@@ -660,7 +675,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       if (executing || executeFlipCounter != executeReference) {
         return false;
       }
-      synchronized (queueSet.scheduleQueue.getModificationLock()) {
+      queueSet.scheduleQueue.lockList();
+      try {
         if (executing || executeFlipCounter != executeReference) {
           // this task is already running, or not ready to run, so ignore
           return false;
@@ -675,6 +691,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           executeFlipCounter++;
           return true;
         }
+      } finally {
+        queueSet.scheduleQueue.unlockList();
       }
     }
     
