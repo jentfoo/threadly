@@ -1,6 +1,7 @@
 package org.threadly.concurrent.limiter;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.threadly.concurrent.AbstractSubmitterExecutor;
 import org.threadly.concurrent.DoNothingRunnable;
@@ -33,8 +34,7 @@ import org.threadly.util.Clock;
 public class RateLimiterExecutor extends AbstractSubmitterExecutor {
   protected final SimpleSchedulerInterface scheduler;
   protected final double permitsPerSecond;
-  protected final Object permitLock;
-  private double lastScheduleTime;
+  private final AtomicLong lastScheduleTime;
   
   /**
    * Constructs a new {@link RateLimiterExecutor}.  Tasks will be scheduled on the provided 
@@ -50,8 +50,8 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
     
     this.scheduler = scheduler;
     this.permitsPerSecond = permitsPerSecond;
-    this.permitLock = new Object();
-    this.lastScheduleTime = Clock.lastKnownForwardProgressingMillis();
+    this.lastScheduleTime = 
+        new AtomicLong(Double.doubleToRawLongBits(Clock.lastKnownForwardProgressingMillis()));
   }
   
   /**
@@ -62,8 +62,12 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
    * @return minimum delay in milliseconds for the next task to be provided
    */
   public int getMinimumDelay() {
-    synchronized (permitLock) {
-      return (int)Math.max(0, lastScheduleTime - Clock.lastKnownForwardProgressingMillis());
+    int result = (int)(Double.longBitsToDouble(lastScheduleTime.get()) - 
+                         Clock.lastKnownForwardProgressingMillis());
+    if (result > 0) {
+      return result;
+    } else {
+      return 0;
     }
   }
   
@@ -183,18 +187,30 @@ public class RateLimiterExecutor extends AbstractSubmitterExecutor {
    */
   protected void doExecute(double permits, Runnable task) {
     double effectiveDelay = (permits / permitsPerSecond) * 1000;
-    synchronized (permitLock) {
-      double scheduleDelay = lastScheduleTime - Clock.accurateForwardProgressingMillis();
+    long casLongBits;
+    while (true) {
+      casLongBits = lastScheduleTime.get();
+      double doubleScheduleTime = Double.longBitsToDouble(casLongBits);
+      double scheduleDelay = doubleScheduleTime - Clock.accurateForwardProgressingMillis();
       if (scheduleDelay < 1) {
+        double updateDouble;
         if (scheduleDelay < 0) {
-          lastScheduleTime = Clock.lastKnownForwardProgressingMillis() + effectiveDelay;
+          updateDouble = Clock.lastKnownForwardProgressingMillis() + effectiveDelay;
         } else {
-          lastScheduleTime += effectiveDelay;
+          updateDouble = doubleScheduleTime + effectiveDelay;
         }
-        scheduler.execute(task);
+        if (lastScheduleTime.compareAndSet(casLongBits, Double.doubleToRawLongBits(updateDouble))) {
+          // at this point lastScheduleTime was updated
+          scheduler.execute(task);
+          break;
+        } // else is to continue loop and retry
       } else {
-        lastScheduleTime += effectiveDelay;
-        scheduler.schedule(task, (long)scheduleDelay);
+        if (lastScheduleTime.compareAndSet(casLongBits, 
+                                           Double.doubleToRawLongBits(doubleScheduleTime + 
+                                                                        effectiveDelay))) {
+          scheduler.schedule(task, (long)scheduleDelay);
+          break;
+        } // else is to continue loop and retry
       }
     }
   }
