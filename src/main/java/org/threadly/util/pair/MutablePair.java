@@ -1,18 +1,15 @@
-package org.threadly.util;
+package org.threadly.util.pair;
 
 /**
  * <p>A special type of {@link Pair} which allows the stored references to be updated after 
  * creation.  Note that stored references are not {@code volatile} or {@code synchronized}, so 
  * thread access must be guarded in synchronization.</p>
  * 
- * @deprecated Moved to {@link org.threadly.util.pair.MutablePair}
- * 
  * @author jent - Mike Jensen
  * @since 4.4.0
  * @param <L> Type of 'left' object to be held
  * @param <R> Type of 'right' object to be held
  */
-@Deprecated
 public class MutablePair<L, R> extends Pair<L, R> {
   /**
    * Constructs a new mutable pair with the left and right references defaulted to be {@code null}.

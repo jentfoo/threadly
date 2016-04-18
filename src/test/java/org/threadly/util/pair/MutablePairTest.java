@@ -1,10 +1,11 @@
-package org.threadly.util;
+package org.threadly.util.pair;
 
 import static org.junit.Assert.*;
 
 import org.junit.Test;
+import org.threadly.util.StringUtils;
 
-@SuppressWarnings({"javadoc", "deprecation"})
+@SuppressWarnings("javadoc")
 public class MutablePairTest extends PairTest {
   @Override
   protected <T> MutablePair<T, T> makePair(T left, T right) {

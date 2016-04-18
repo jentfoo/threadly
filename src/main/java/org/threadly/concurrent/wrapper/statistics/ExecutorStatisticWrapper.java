@@ -17,8 +17,8 @@ import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.concurrent.statistics.StatisticExecutor;
 import org.threadly.util.ArgumentVerifier;
 import org.threadly.util.Clock;
-import org.threadly.util.Pair;
 import org.threadly.util.StatisticsUtils;
+import org.threadly.util.pair.Pair;
 
 /**
  * <p>Wrap an {@link Executor} to get statistics based off executions through this wrapper.  If 

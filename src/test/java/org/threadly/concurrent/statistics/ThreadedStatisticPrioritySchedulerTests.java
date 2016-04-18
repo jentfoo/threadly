@@ -14,7 +14,7 @@ import org.threadly.test.concurrent.AsyncVerifier;
 import org.threadly.test.concurrent.TestCondition;
 import org.threadly.test.concurrent.TestRunnable;
 import org.threadly.test.concurrent.TestUtils;
-import org.threadly.util.Pair;
+import org.threadly.util.pair.Pair;
 
 @SuppressWarnings("javadoc")
 public class ThreadedStatisticPrioritySchedulerTests {

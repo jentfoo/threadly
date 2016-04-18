@@ -1,4 +1,4 @@
-package org.threadly.util;
+package org.threadly.util.pair;
 
 import static org.junit.Assert.*;
 import static org.threadly.TestConstants.*;
@@ -7,8 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Test;
+import org.threadly.util.StringUtils;
 
-@SuppressWarnings({"javadoc", "deprecation"})
+@SuppressWarnings("javadoc")
 public class PairTest {
   protected <T> Pair<T, T> makePair(T left, T right) {
     return new Pair<T, T>(left, right);
@@ -25,7 +26,7 @@ public class PairTest {
       pairs.add(makePair(null, StringUtils.makeRandomString(5)));
     }
     
-    List<String> result = org.threadly.util.pair.Pair.collectLeft(pairs);
+    List<String> result = Pair.collectLeft(pairs);
     
     assertEquals(TEST_QTY, result.size());
     assertTrue(expectedResult.equals(result));
@@ -42,7 +43,7 @@ public class PairTest {
       pairs.add(makePair(StringUtils.makeRandomString(5), null));
     }
     
-    List<String> result = org.threadly.util.pair.Pair.collectRight(pairs);
+    List<String> result = Pair.collectRight(pairs);
     
     assertEquals(TEST_QTY, result.size());
     assertTrue(expectedResult.equals(result));
@@ -68,8 +69,8 @@ public class PairTest {
       pairs.add(makePair(StringUtils.makeRandomString(5), rightStr));
     }
     
-    assertFalse(org.threadly.util.pair.Pair.containsLeft(pairs, rightStr));
-    assertTrue(org.threadly.util.pair.Pair.containsLeft(pairs, searchStr));
+    assertFalse(Pair.containsLeft(pairs, rightStr));
+    assertTrue(Pair.containsLeft(pairs, searchStr));
   }
   
   @Test
@@ -92,8 +93,8 @@ public class PairTest {
       pairs.add(makePair(leftStr, StringUtils.makeRandomString(5)));
     }
     
-    assertFalse(org.threadly.util.pair.Pair.containsRight(pairs, leftStr));
-    assertTrue(org.threadly.util.pair.Pair.containsRight(pairs, searchStr));
+    assertFalse(Pair.containsRight(pairs, leftStr));
+    assertTrue(Pair.containsRight(pairs, searchStr));
   }
   
   @Test
@@ -116,7 +117,7 @@ public class PairTest {
       pairs.add(makePair(StringUtils.makeRandomString(5), StringUtils.makeRandomString(5)));
     }
     
-    assertTrue(org.threadly.util.pair.Pair.getRightFromLeft(pairs, searchStr) == rightStr);
+    assertTrue(Pair.getRightFromLeft(pairs, searchStr) == rightStr);
   }
   
   @Test
@@ -139,7 +140,7 @@ public class PairTest {
       pairs.add(makePair(StringUtils.makeRandomString(5), StringUtils.makeRandomString(5)));
     }
     
-    assertTrue(org.threadly.util.pair.Pair.getLeftFromRight(pairs, searchStr) == leftStr);
+    assertTrue(Pair.getLeftFromRight(pairs, searchStr) == leftStr);
   }
   
   @Test

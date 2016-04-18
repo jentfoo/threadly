@@ -8,7 +8,7 @@ import org.threadly.concurrent.TaskPriority;
 import org.threadly.concurrent.collections.ConcurrentArrayList;
 import org.threadly.concurrent.statistics.PriorityStatisticManager.TaskStatWrapper;
 import org.threadly.util.Clock;
-import org.threadly.util.Pair;
+import org.threadly.util.pair.Pair;
 
 /**
  * <p>An implementation of {@link NoThreadScheduler} which tracks run and usage statistics.  This 

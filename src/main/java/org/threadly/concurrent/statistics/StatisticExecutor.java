@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.threadly.concurrent.SubmitterExecutor;
-import org.threadly.util.Pair;
+import org.threadly.util.pair.Pair;
 
 /**
  * <p>Interface for some basic statistic elements provided by any statistic executor/scheduler or 

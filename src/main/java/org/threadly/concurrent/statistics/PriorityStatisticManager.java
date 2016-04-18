@@ -14,8 +14,8 @@ import org.threadly.concurrent.TaskPriority;
 import org.threadly.concurrent.collections.ConcurrentArrayList;
 import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.util.Clock;
-import org.threadly.util.Pair;
 import org.threadly.util.StatisticsUtils;
+import org.threadly.util.pair.Pair;
 
 /**
  * <p>This class primarily holds the structures used to store the statistics.  These can not be 
