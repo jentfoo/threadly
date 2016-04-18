@@ -31,8 +31,9 @@ public class Pair<L, R> {
   public static <T> List<T> collectLeft(Collection<? extends Pair<? extends T, ?>> source) {
     List<T> result = new ArrayList<T>(source.size());
     for (Pair<? extends T, ?> p : source) {
-      if (p.left != null) {
-        result.add(p.left);
+      T left = p.getLeft();
+      if (left != null) {
+        result.add(left);
       }
     }
     return result;
@@ -50,8 +51,9 @@ public class Pair<L, R> {
   public static <T> List<T> collectRight(Collection<? extends Pair<?, ? extends T>> source) {
     List<T> result = new ArrayList<T>(source.size());
     for (Pair<?, ? extends T> p : source) {
-      if (p.right != null) {
-        result.add(p.right);
+      T right = p.getRight();
+      if (right != null) {
+        result.add(right);
       }
     }
     return result;
@@ -67,11 +69,12 @@ public class Pair<L, R> {
    */
   public static boolean containsLeft(Iterable<? extends Pair<?, ?>> search, Object value) {
     for (Pair<?, ?> p : search) {
-      if (p.left == null) {
+      Object left = p.getLeft();
+      if (left == null) {
         if (value == null) {
           return true;
         }
-      } else if (p.left.equals(value)) {
+      } else if (left.equals(value)) {
         return true;
       }
     }
@@ -89,11 +92,12 @@ public class Pair<L, R> {
    */
   public static boolean containsRight(Iterable<? extends Pair<?, ?>> search, Object value) {
     for (Pair<?, ?> p : search) {
-      if (p.right == null) {
+      Object right = p.getRight();
+      if (right == null) {
         if (value == null) {
           return true;
         }
-      } else if (p.right.equals(value)) {
+      } else if (right.equals(value)) {
         return true;
       }
     }
@@ -115,12 +119,13 @@ public class Pair<L, R> {
    */
   public static <T> T getRightFromLeft(Iterable<? extends Pair<?, ? extends T>> search, Object left) {
     for (Pair<?, ? extends T> p : search) {
-      if (p.left == null) {
+      Object leftVal = p.getLeft();
+      if (leftVal == null) {
         if (left == null) {
-          return p.right;
+          return p.getRight();
         }
-      } else if (p.left.equals(left)) {
-        return p.right;
+      } else if (leftVal.equals(left)) {
+        return p.getRight();
       }
     }
     
@@ -141,12 +146,13 @@ public class Pair<L, R> {
    */
   public static <T> T getLeftFromRight(Iterable<? extends Pair<? extends T, ?>> search, Object right) {
     for (Pair<? extends T, ?> p : search) {
-      if (p.right == null) {
+      Object rightVal = p.getRight();
+      if (rightVal == null) {
         if (right == null) {
-          return p.left;
+          return p.getLeft();
         }
-      } else if (p.right.equals(right)) {
-        return p.left;
+      } else if (rightVal.equals(right)) {
+        return p.getLeft();
       }
     }
     
@@ -188,7 +194,7 @@ public class Pair<L, R> {
   
   @Override
   public String toString() {
-    return Pair.class.getSimpleName() + '[' + left + ',' + right + ']';
+    return Pair.class.getSimpleName() + '[' + getLeft() + ',' + getRight() + ']';
   }
   
   @Override
@@ -197,9 +203,13 @@ public class Pair<L, R> {
       return true;
     } else if (o instanceof Pair) {
       Pair<?, ?> p = (Pair<?, ?>)o;
-      if (! (left == p.left || (left != null && left.equals(p.left)))) {
+      // lazily set in if condition
+      L left; R right;
+      if (! ((left = getLeft()) == p.getLeft() || 
+          (left != null && left.equals(p.getLeft())))) {
         return false;
-      } else if (! (right == p.right || (right != null && right.equals(p.right)))) {
+      } else if (! ((right = getRight()) == p.getRight() || 
+                 (right != null && right.equals(p.getRight())))) {
         return false;
       } else {
         return true;
@@ -211,6 +221,8 @@ public class Pair<L, R> {
   
   @Override
   public int hashCode() {
+    L left = getLeft();
+    R right = getRight();
     int leftHash = left == null ? LEFT_PRIME : left.hashCode();
     int rightHash = right == null ? RIGHT_PRIME : right.hashCode();
     return leftHash ^ rightHash;

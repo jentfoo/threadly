@@ -7,6 +7,10 @@ import org.threadly.util.StringUtils;
 
 @SuppressWarnings("javadoc")
 public class MutablePairTest extends PairTest {
+  protected <T> MutablePair<T, T> makePair() {
+    return makePair(null, null);
+  }
+  
   @Override
   protected <T> MutablePair<T, T> makePair(T left, T right) {
     return new MutablePair<T, T>(left, right);
@@ -15,7 +19,8 @@ public class MutablePairTest extends PairTest {
   @Test
   public void setAndGetLeftTest() {
     String strValue = StringUtils.makeRandomString(5);
-    MutablePair<String, String> p = new MutablePair<String, String>();
+    MutablePair<String, String> p = makePair();
+    assertNull(p.getLeft());
     p.setLeft(strValue);
     assertEquals(strValue, p.getLeft());
   }
@@ -23,7 +28,8 @@ public class MutablePairTest extends PairTest {
   @Test
   public void setAndGetRightTest() {
     String strValue = StringUtils.makeRandomString(5);
-    MutablePair<String, String> p = new MutablePair<String, String>();
+    MutablePair<String, String> p = makePair();
+    assertNull(p.getRight());
     p.setRight(strValue);
     assertEquals(strValue, p.getRight());
   }

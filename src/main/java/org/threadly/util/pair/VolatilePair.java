@@ -2,20 +2,22 @@ package org.threadly.util.pair;
 
 /**
  * <p>A special type of {@link Pair} which allows the stored references to be updated after 
- * creation.  Note that stored references are not {@code volatile} or {@code synchronized}, so 
- * thread access must be guarded in synchronization.  If you want to set internal values without 
- * synchronization consider using {@link VolatilePair}.</p>
+ * creation.  The stored references are {@code volatile} so values set from different threads 
+ * will be able to be read without synchronization.</p>
  * 
  * @author jent - Mike Jensen
  * @since 4.4.0
  * @param <L> Type of 'left' object to be held
  * @param <R> Type of 'right' object to be held
  */
-public class MutablePair<L, R> extends Pair<L, R> {
+public class VolatilePair<L, R> extends MutablePair<L, R> {
+  protected volatile L left;
+  protected volatile R right;
+  
   /**
    * Constructs a new mutable pair with the left and right references defaulted to be {@code null}.
    */
-  public MutablePair() {
+  public VolatilePair() {
     super(null, null);
   }
 
@@ -25,25 +27,30 @@ public class MutablePair<L, R> extends Pair<L, R> {
    * @param left Left reference
    * @param right Right reference
    */
-  public MutablePair(L left, R right) {
-    super(left, right);
+  public VolatilePair(L left, R right) {
+    super(null, null);
+    
+    this.left = left;
+    this.right = right;
   }
   
-  /**
-   * Update the left reference with the provided object.
-   * 
-   * @param left New reference to be used for the left of the pair
-   */
+  @Override
   public void setLeft(L left) {
     this.left = left;
   }
 
-  /**
-   * Update the right reference with the provided object.
-   * 
-   * @param right New reference to be used for the right of the pair
-   */
+  @Override
   public void setRight(R right) {
     this.right = right;
+  }
+  
+  @Override
+  public L getLeft() {
+    return left;
+  }
+  
+  @Override
+  public R getRight() {
+    return right;
   }
 }
