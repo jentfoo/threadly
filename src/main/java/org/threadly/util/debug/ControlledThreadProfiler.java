@@ -83,11 +83,14 @@ public class ControlledThreadProfiler extends Profiler {
       return; // don't add
     }
     
-    synchronized (controledThreadStore.profiledThreads.getModificationLock()) {
+    controledThreadStore.profiledThreads.lockForModifications();
+    try {
       SelectedThreadSample threadSample = new SelectedThreadSample(t);
       if (! controledThreadStore.profiledThreads.contains(threadSample)) {
         controledThreadStore.profiledThreads.add(threadSample);
       }
+    } finally {
+      controledThreadStore.profiledThreads.unlockForModifications();
     }
   }
   

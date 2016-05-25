@@ -34,7 +34,7 @@ public class ConcurrentArrayListTest {
   @SuppressWarnings("unused")
   @Test (expected = IllegalArgumentException.class)
   public void constructorFail() {
-    new ConcurrentArrayList<String>(null, new Object());
+    new ConcurrentArrayList<String>(null);
     fail("Exception should have thrown");
   }
   
@@ -45,14 +45,6 @@ public class ConcurrentArrayListTest {
     
     assertNotNull(testStr);
     assertTrue(testStr.length() > 2);
-  }
-  
-  @Test
-  public void getModificationLockTest() {
-    Object testLock = new Object();
-    ConcurrentArrayList<String> testList = new ConcurrentArrayList<String>(testLock);
-    
-    assertTrue(testLock == testList.getModificationLock());
   }
   
   @Test

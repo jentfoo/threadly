@@ -240,9 +240,12 @@ public class NoThreadSchedulerStatisticTracker extends NoThreadScheduler
       ConcurrentArrayList<Long> priorityStats = 
           statsManager.getExecutionDelaySamplesInternal(statWrapper.priority);
 
-      synchronized (priorityStats.getModificationLock()) {
+      priorityStats.lockForModifications();
+      try {
         priorityStats.add(taskDelay);
         statsManager.trimWindow(priorityStats);
+      } finally {
+        priorityStats.unlockForModifications();
       }
     }
     

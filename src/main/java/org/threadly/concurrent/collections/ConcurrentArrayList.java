@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.NoSuchElementException;
 import java.util.RandomAccess;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 import org.threadly.util.ArgumentVerifier;
 
@@ -56,51 +59,29 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     return new DataSet<E>(EMPTY_OBJECT_ARRAY, 0, 0, frontPadding, rearPadding);
   }
   
-  protected final Object modificationLock;
+  private final AtomicReference<Thread> lockedThread;
+  private final ConcurrentLinkedQueue<Thread> waitingThreads;
+  private volatile int lockCount;
   protected volatile DataSet<T> currentData;
-  
+
   /**
-   * Constructs a new {@link ConcurrentArrayList} with a new internal NativeLock implementation.
+   * Constructs a new {@link ConcurrentArrayList}.
    */
   public ConcurrentArrayList() {
     this(0, 0);
   }
-  
+
   /**
-   * Constructs a new {@link ConcurrentArrayList} with specific padding.  Specifying the padding 
-   * amounts can optimize this implementation more for the specific use case.  If there is space 
-   * in the array for adds to the front or end, then we are able to avoid an array copy.
+   * Constructs a new {@link ConcurrentArrayList} with a provided lock object.  Specifying 
+   * the padding amounts can optimize this implementation more for the specific use case.  If 
+   * there is space in the array for adds to the front or end, then we are able to avoid an array 
+   * copy.
    * 
    * @param frontPadding padding to add to front of array to possible avoid array copies
    * @param rearPadding padding to add to end of array to possible avoid array copies
    */
   public ConcurrentArrayList(int frontPadding, int rearPadding) {
-    this(null, frontPadding, rearPadding);
-  }
-
-  /**
-   * Constructs a new {@link ConcurrentArrayList} with a provided lock object.  This is the lock 
-   * used to guard modifications, and is returned from {@link #getModificationLock()}.
-   * 
-   * @param modificationLock lock to synchronize on internally
-   */
-  protected ConcurrentArrayList(Object modificationLock) {
-    this(modificationLock, 0, 0);
-  }
-
-  /**
-   * Constructs a new {@link ConcurrentArrayList} with a provided lock object.  This is the lock 
-   * used to guard modifications, and is returned from {@link #getModificationLock()}.  Specifying 
-   * the padding amounts can optimize this implementation more for the specific use case.  If 
-   * there is space in the array for adds to the front or end, then we are able to avoid an array 
-   * copy.
-   * 
-   * @param modificationLock lock to synchronize on internally
-   * @param frontPadding padding to add to front of array to possible avoid array copies
-   * @param rearPadding padding to add to end of array to possible avoid array copies
-   */
-  protected ConcurrentArrayList(Object modificationLock, int frontPadding, int rearPadding) {
-    this(ConcurrentArrayList.<T>makeEmptyDataSet(frontPadding, rearPadding), modificationLock);
+    this(ConcurrentArrayList.<T>makeEmptyDataSet(frontPadding, rearPadding));
   }
   
   /**
@@ -108,28 +89,64 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    * This is used for constructing sub-lists, but may also be useful to extending classes.
    * 
    * @param startSet {@link DataSet} to use internally
-   * @param modificationLock lock to synchronize on internally
    */
-  protected ConcurrentArrayList(DataSet<T> startSet, Object modificationLock) {
+  protected ConcurrentArrayList(DataSet<T> startSet) {
     ArgumentVerifier.assertNotNull(startSet, "startSet");
-    if (modificationLock == null) {
-      modificationLock = new Object();
-    }
     
-    this.modificationLock = modificationLock;
+    lockedThread = new AtomicReference<Thread>();
+    waitingThreads = new ConcurrentLinkedQueue<Thread>();
+    lockCount = 0;
     currentData = startSet;
   }
   
-  /**
-   * If you want to chain multiple calls together and ensure that no threads modify the structure 
-   * during that time you can get the lock to prevent additional modifications.  
-   * 
-   * This lock should be synchronized on to prevent modifications.
-   * 
-   * @return lock used internally
-   */
-  public Object getModificationLock() {
-    return modificationLock;
+  public void lockForModifications() {
+    Thread currentThread = Thread.currentThread();
+    if (lockedThread.get() != currentThread) {
+      boolean added = false;
+      while (! lockedThread.compareAndSet(null, currentThread)) {
+        if (! added) {
+          waitingThreads.add(currentThread);
+          added = true;
+        }
+        /* we must try again after adding us to the waiting threads, 
+         * in case another thread released, and already checked waiting threads 
+         * before we were added 
+         */
+        if (lockedThread.compareAndSet(null, currentThread)) {
+          break;
+        } else {
+          LockSupport.park();
+          if (currentThread.isInterrupted()) {
+            throw new RuntimeException("TODO - should be InterruptedException");
+            // TODO - throw new InterruptedException();
+          }
+        }
+      }
+      if (added) {
+        waitingThreads.remove(currentThread); // no longer waiting, remove if still there
+      }
+      if (lockCount != 0) {
+        throw new RuntimeException();
+      }
+    }
+    
+    lockCount++;
+  }
+  
+  public void unlockForModifications() {
+    if (lockedThread.get() != Thread.currentThread()) {
+      throw new IllegalStateException("Thread not currently holding lock, lock holder: " + lockedThread.get());
+    }
+    
+    lockCount--;
+    
+    if (lockCount == 0) {
+      lockedThread.set(null);
+      Thread waitingThread = waitingThreads.peek();
+      if (waitingThread != null) {
+        LockSupport.unpark(waitingThread);
+      }
+    }
   }
   
   /**
@@ -141,9 +158,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
   public void setFrontPadding(int frontPadding) {
     ArgumentVerifier.assertNotNegative(frontPadding, "frontPadding");
     
-    synchronized (modificationLock) {
-      currentData.frontPadding = frontPadding;
-    }
+    lockForModifications();
+    currentData.frontPadding = frontPadding;
+    unlockForModifications();
   }
 
   /**
@@ -153,10 +170,10 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    */
   public void setRearPadding(int rearPadding) {
     ArgumentVerifier.assertNotNegative(rearPadding, "rearPadding");
-
-    synchronized (modificationLock) {
-      currentData.rearPadding = rearPadding;
-    }
+    
+    lockForModifications();
+    currentData.rearPadding = rearPadding;
+    unlockForModifications();
   }
   
   /**
@@ -186,8 +203,11 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    * {@code 0}.
    */
   public void trimToSize() {
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       currentData = currentData.trimToSize();
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -273,9 +293,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (e == null) {
       return false;
     }
-    
-    synchronized (modificationLock) {
+
+    lockForModifications();
+    try {
       currentData = currentData.addToEnd(e);
+    } finally {
+      unlockForModifications();
     }
     
     return true;
@@ -296,9 +319,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (c.isEmpty()) {
       return false;
     }
-
-    synchronized (modificationLock) {
+    
+    lockForModifications();
+    try {
       currentData = currentData.addAll(c);
+    } finally {
+      unlockForModifications();
     }
     
     return true;
@@ -321,13 +347,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (c.isEmpty()) {
       return false;
     }
-
-    synchronized (modificationLock) {
+    
+    lockForModifications();
+    try {
       if (index > currentData.size) {
         throw new IndexOutOfBoundsException("Index is beyond the array size: " + index);
       }
       
       currentData = currentData.addAll(index, c);
+    } finally {
+      unlockForModifications();
     }
     
     return true;
@@ -349,9 +378,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     
     DataSet<T> originalSet;
     DataSet<T> resultSet;
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       originalSet = currentData;
       currentData = resultSet = currentData.retainAll(c);
+    } finally {
+      unlockForModifications();
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -359,8 +391,11 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public void clear() {
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       currentData = makeEmptyDataSet(currentData.frontPadding, currentData.rearPadding);
+    } finally {
+      unlockForModifications();
     }
   }
   
@@ -370,9 +405,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (e == null) {
       throw new UnsupportedOperationException("This structure can not accept nulls");
     }
-    
-    synchronized (modificationLock) {
+
+    lockForModifications();
+    try {
       currentData = currentData.addToFront(e);
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -382,9 +420,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (e == null) {
       throw new UnsupportedOperationException("This structure can not accept nulls");
     }
-    
-    synchronized (modificationLock) {
+
+    lockForModifications();
+    try {
       currentData = currentData.addToEnd(e);
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -426,25 +467,31 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public T pollFirst() {
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       T result = peekFirst();
       if (result != null) {
         currentData = currentData.remove(0);
       }
       
       return result;
+    } finally {
+      unlockForModifications();
     }
   }
 
   @Override
   public T pollLast() {
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       T result = peekLast();
       if (result != null) {
         currentData = currentData.remove(currentData.size - 1);
       }
       
       return result;
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -501,9 +548,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
     DataSet<T> originalSet;
     DataSet<T> resultSet;
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       originalSet = currentData;
       currentData = resultSet = currentData.removeAll(c);
+    } finally {
+      unlockForModifications();
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -513,8 +563,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (o == null) {
       return false;
     }
-    
-    synchronized (modificationLock) {
+
+    lockForModifications();
+    try {
       int index;
       if (searchBackwards) {
         index = currentData.lastIndexOf(o);
@@ -527,6 +578,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
         currentData = currentData.remove(index);
         return true;
       }
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -552,13 +605,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     }
     
     DataSet<T> originalSet;
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       if (index > currentData.size - 1) {
         throw new IndexOutOfBoundsException("Index is beyond the array max index: " + index);
       }
       
       originalSet = currentData;
       currentData = currentData.remove(index);
+    } finally {
+      unlockForModifications();
     }
     
     return originalSet.get(index);
@@ -601,13 +657,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     }
     
     DataSet<T> originalSet;
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       if (index > currentData.size - 1) {
         throw new IndexOutOfBoundsException("Index is beyond the array max index: " + index);
       }
       
       originalSet = currentData;
       currentData = currentData.set(index, element);
+    } finally {
+      unlockForModifications();
     }
     
     return originalSet.get(index);
@@ -619,12 +678,15 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new IndexOutOfBoundsException("Index can not be negative");
     }
     
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       if (index > currentData.size) {
         throw new IndexOutOfBoundsException("Index is beyond the array size: " + index);
       }
       
       currentData = currentData.add(index, element);
+    } finally {
+      unlockForModifications();
     }
   }
   
@@ -652,8 +714,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (newIndex < 0) {
       throw new IndexOutOfBoundsException("New index can not be negative");
     }
-    
-    synchronized (modificationLock) {
+
+    lockForModifications();
+    try {
       if (newIndex > currentData.size) {
         throw new IndexOutOfBoundsException(newIndex + " is beyond the array's size: " + 
                                               currentData.size);
@@ -672,6 +735,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
 
       currentData = currentData.reposition(index, newIndex);
+    } finally {
+      unlockForModifications();
     }
   }
   
@@ -694,7 +759,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       return;
     }
     
-    synchronized (modificationLock) {
+    lockForModifications();
+    try {
       if (newIndex > currentData.size) {
         throw new IndexOutOfBoundsException("new index " + newIndex + 
                                               " is beyond the array's length: " + currentData.size);
@@ -704,6 +770,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
       
       currentData = currentData.reposition(originalIndex, newIndex);
+    } finally {
+      unlockForModifications();
     }
   }
 
@@ -777,7 +845,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
                                          (workingData.dataEndIndex - toIndex), 
                                        currentData.frontPadding, currentData.rearPadding);
     
-    return new ConcurrentArrayList<T>(newSet, modificationLock);
+    return new ConcurrentArrayList<T>(newSet);
   }
   
   @Override
@@ -880,7 +948,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
     @Override
     public void remove() {
-      synchronized (modificationLock) {
+      lockForModifications();
+      try {
         // you can not cause concurrent modification exceptions with this implementation
         if (currentData == dataSet) {
           ConcurrentArrayList.this.remove(--nextIndex);
@@ -892,12 +961,15 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
             ConcurrentArrayList.this.remove(globalIndex);
           }
         }
+      } finally {
+        unlockForModifications();
       }
     }
 
     @Override
     public void set(T e) {
-      synchronized (modificationLock) {
+      lockForModifications();
+      try {
         if (currentData == dataSet) {
           ConcurrentArrayList.this.set(nextIndex - 1, e);
           
@@ -908,12 +980,15 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
             ConcurrentArrayList.this.set(globalIndex, e);
           }
         }
+      } finally {
+        unlockForModifications();
       }
     }
 
     @Override
     public void add(T e) {
-      synchronized (modificationLock) {
+      lockForModifications();
+      try {
         if (currentData == dataSet) {
           ConcurrentArrayList.this.add(nextIndex, e);
           
@@ -926,6 +1001,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
             ConcurrentArrayList.this.add(globalIndex + 1, e);
           }
         }
+      } finally {
+        unlockForModifications();
       }
     }
   }

@@ -705,9 +705,12 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
      */
     protected void trackTaskFinish(Wrapper taskWrapper) {
       long finishTime = Clock.accurateForwardProgressingMillis();
-      synchronized (runTimes.getModificationLock()) {
+      runTimes.lockForModifications();
+      try {
         runTimes.add(finishTime - taskWrapper.startTime);
         trimWindow(runTimes);
+      } finally {
+        runTimes.unlockForModifications();
       }
       runningTasks.remove(taskWrapper);
     }
@@ -769,9 +772,12 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler {
             throw new UnsupportedOperationException();
         }
   
-        synchronized (priorityStats.getModificationLock()) {
+        priorityStats.lockForModifications();
+        try {
           priorityStats.add(taskDelay);
           StatsManager.trimWindow(priorityStats);
+        } finally {
+          priorityStats.unlockForModifications();
         }
       }
       

@@ -138,9 +138,12 @@ class PriorityStatisticManager {
     
     Long startTime = runningTasks.remove(taskPair);
     
-    synchronized (runDurations.getModificationLock()) {
+    runDurations.lockForModifications();
+    try {
       runDurations.add(finishTime - startTime);
       trimWindow(runDurations);
+    } finally {
+      runDurations.unlockForModifications();
     }
   }
   
