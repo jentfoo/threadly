@@ -81,7 +81,7 @@ public class ConcurrentArrayListDataSetTest {
                                              "7a79ae56", "4aa4ceeb", "4e4b9101", "431d00cf", 
                                              "25203875", "665a9c5d", "46cfd22a", "a574b2", "5f8a8ae7"        
      };
-    assertTrue(result.equals(ConcurrentArrayListDataSetTest.<String>makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(ConcurrentArrayListDataSetTest.<String>makeDataSet(expectedResult, 0, expectedResult.length)));
   }
 
   // this was another failure that was hard to find
@@ -101,12 +101,12 @@ public class ConcurrentArrayListDataSetTest {
                                              "9-9223372036854775807;1d209d56"
             
     };
-    assertTrue(result.equals(ConcurrentArrayListDataSetTest.<String>makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(ConcurrentArrayListDataSetTest.<String>makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void equalsBasicTest() {
-    assertTrue(orderedNormal.equals(orderedNormal));
+    assertTrue(orderedNormal.equalsEquivelent(orderedNormal));
     assertFalse(orderedNormal.equals(new Object()));
   }
   
@@ -208,11 +208,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = orderedNormal.reposition(0, 5);
     assertEquals(orderedNormal.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 0, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = orderedNormal.reposition(0, 10);
     expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -221,19 +221,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = orderedNormal.reposition(1, 0);
     assertEquals(orderedNormal.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 0, 2, 3, 4, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = orderedNormal.reposition(1, 5);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 1, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = orderedNormal.reposition(5, 1);
     expectedResult = new Integer[]{ 0, 5, 1, 2, 3, 4, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = orderedNormal.reposition(1, 10);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 5, 6, 7, 8, 9, 1 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -242,11 +242,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = orderedNormal.reposition(9, 5);
     assertEquals(orderedNormal.size, result.size);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 9, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = orderedNormal.reposition(9, 0);
     expectedResult = new Integer[]{ 9, 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -255,11 +255,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromFront.reposition(0, 5);
     assertEquals(removedFromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 1, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = removedFromFront.reposition(0, 9);
     expectedResult = new Integer[]{ 2, 3, 4, 5, 6, 7, 8, 9, 1 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -268,19 +268,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromFront.reposition(1, 0);
     assertEquals(removedFromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 2, 1, 3, 4, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = removedFromFront.reposition(1, 5);
     expectedResult = new Integer[]{ 1, 3, 4, 5, 2, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = removedFromFront.reposition(5, 1);
     expectedResult = new Integer[]{ 1, 6, 2, 3, 4, 5, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = removedFromFront.reposition(1, 9);
     expectedResult = new Integer[]{ 1, 3, 4, 5, 6, 7, 8, 9, 2 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -289,11 +289,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromFront.reposition(8, 5);
     assertEquals(removedFromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 9, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = removedFromFront.reposition(8, 0);
     expectedResult = new Integer[]{ 9, 1, 2, 3, 4, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -302,11 +302,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromFront.reposition(0, 4);
     assertEquals(removed2FromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 3, 4, 5, 2, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = removed2FromFront.reposition(0, 8);
     expectedResult = new Integer[]{ 3, 4, 5, 6, 7, 8, 9, 2 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -315,19 +315,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromFront.reposition(1, 0);
     assertEquals(removed2FromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 3, 2, 4, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = removed2FromFront.reposition(1, 5);
     expectedResult = new Integer[]{ 2, 4, 5, 6, 3, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = removed2FromFront.reposition(5, 1);
     expectedResult = new Integer[]{ 2, 7, 3, 4, 5, 6, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = removed2FromFront.reposition(1, 8);
     expectedResult = new Integer[]{ 2, 4, 5, 6, 7, 8, 9, 3 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -336,11 +336,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromFront.reposition(7, 4);
     assertEquals(removed2FromFront.size, result.size);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 9, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = removed2FromFront.reposition(7, 0);
     expectedResult = new Integer[]{ 9, 2, 3, 4, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -349,11 +349,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromEnd.reposition(0, 5);
     assertEquals(removedFromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 0, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = removedFromEnd.reposition(0, 9);
     expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 0 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -362,19 +362,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromEnd.reposition(1, 0);
     assertEquals(removedFromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 0, 2, 3, 4, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = removedFromEnd.reposition(1, 5);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 1, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = removedFromEnd.reposition(5, 1);
     expectedResult = new Integer[]{ 0, 5, 1, 2, 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = removedFromEnd.reposition(1, 9);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 5, 6, 7, 8, 1 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -383,11 +383,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromEnd.reposition(8, 5);
     assertEquals(removedFromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 8, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = removedFromEnd.reposition(8, 0);
     expectedResult = new Integer[]{ 8, 0, 1, 2, 3, 4, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -396,11 +396,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromEnd.reposition(0, 5);
     assertEquals(removed2FromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 0, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = removed2FromEnd.reposition(0, 8);
     expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 0 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -409,19 +409,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromEnd.reposition(1, 0);
     assertEquals(removed2FromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 0, 2, 3, 4, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = removed2FromEnd.reposition(1, 5);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 1, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = removed2FromEnd.reposition(5, 1);
     expectedResult = new Integer[]{ 0, 5, 1, 2, 3, 4, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = removed2FromEnd.reposition(1, 8);
     expectedResult = new Integer[]{ 0, 2, 3, 4, 5, 6, 7, 1 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -430,11 +430,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removed2FromEnd.reposition(7, 5);
     assertEquals(removed2FromEnd.size, result.size);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 7, 5, 6 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = removed2FromEnd.reposition(7, 0);
     expectedResult = new Integer[]{ 7, 0, 1, 2, 3, 4, 5, 6 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -443,11 +443,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromBoth.reposition(0, 4);
     assertEquals(removedFromBoth.size, result.size);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 1, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move front to end
     result = removedFromBoth.reposition(0, 8);
     expectedResult = new Integer[]{ 2, 3, 4, 5, 6, 7, 8, 1 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -456,19 +456,19 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromBoth.reposition(1, 0);
     assertEquals(removedFromBoth.size, result.size);
     Integer[] expectedResult = new Integer[]{ 2, 1, 3, 4, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle right
     result = removedFromBoth.reposition(1, 4);
     expectedResult = new Integer[]{ 1, 3, 4, 2, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to middle left
     result = removedFromBoth.reposition(4, 1);
     expectedResult = new Integer[]{ 1, 5, 2, 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move middle to end
     result = removedFromBoth.reposition(1, 8);
     expectedResult = new Integer[]{ 1, 3, 4, 5, 6, 7, 8, 2 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -477,11 +477,11 @@ public class ConcurrentArrayListDataSetTest {
     DataSet<Integer> result = removedFromBoth.reposition(7, 3);
     assertEquals(removedFromBoth.size, result.size);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 8, 4, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     // move end to start
     result = removedFromBoth.reposition(7, 0);
     expectedResult = new Integer[]{ 8, 1, 2, 3, 4, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -742,126 +742,126 @@ public class ConcurrentArrayListDataSetTest {
   public void setNormalTest() {
     DataSet<Integer> result = orderedNormal.set(10, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 1, 2, 3, 4, 0, 6, 7, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void setFrontRemovedTest() {
     DataSet<Integer> result = removedFromFront.set(9, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 2, 3, 4, 5, 0, 7, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void setFront2RemovedTest() {
     DataSet<Integer> result = removed2FromFront.set(8, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 3, 4, 5, 6, 0, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void setEndRemovedTest() {
     DataSet<Integer> result = removedFromEnd.set(9, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 1, 2, 3, 4, 0, 6, 7, 8, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void setEnd2RemovedTest() {
     DataSet<Integer> result = removed2FromEnd.set(8, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 1, 2, 3, 4, 0, 6, 7, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void setBothRemovedTest() {
     DataSet<Integer> result = removedFromBoth.set(8, 100).set(5,0).set(0, 10);
     Integer[] expectedResult = new Integer[]{ 10, 2, 3, 4, 5, 0, 7, 8, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addNormalTest() {
     DataSet<Integer> result = orderedNormal.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addFrontRemovedTest() {
     DataSet<Integer> result = removedFromFront.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addFront2RemovedTest() {
     DataSet<Integer> result = removed2FromFront.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 6, 7, 8, 9, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addEndRemovedTest() {
     DataSet<Integer> result = removedFromEnd.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addEnd2RemovedTest() {
     DataSet<Integer> result = removed2FromEnd.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addBothRemovedTest() {
     DataSet<Integer> result = removedFromBoth.addToEnd(100);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 100 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexNormalTest() {
     DataSet<Integer> result = orderedNormal.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 0, 1, 2, 3, 4, 100, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexFrontRemovedTest() {
     DataSet<Integer> result = removedFromFront.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 1, 2, 3, 4, 5, 100, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexFront2RemovedTest() {
     DataSet<Integer> result = removed2FromFront.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 2, 3, 4, 5, 6, 100, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexEndRemovedTest() {
     DataSet<Integer> result = removedFromEnd.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 0, 1, 2, 3, 4, 100, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexEnd2RemovedTest() {
     DataSet<Integer> result = removed2FromEnd.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 0, 1, 2, 3, 4, 100, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void addIndexBothRemovedTest() {
     DataSet<Integer> result = removedFromBoth.add(5, 100).add(0, 200);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 200, 1, 2, 3, 4, 5, 100, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -874,7 +874,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = orderedNormal.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -887,7 +887,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromFront.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -900,7 +900,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removed2FromFront.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 6, 7, 8, 9, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -913,7 +913,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromEnd.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -926,7 +926,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removed2FromEnd.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 0, 1, 2, 3, 4, 5, 6, 7, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -939,7 +939,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromBoth.addAll(toAddList);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 5, 6, 7, 8, 100, 200, 300, 400, 500 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -952,7 +952,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = orderedNormal.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 0, 1, 2, 3, 4, 100, 200, 300, 400, 500, 5, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -965,7 +965,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromFront.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 1, 2, 3, 4, 5, 100, 200, 300, 400, 500, 6, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -978,7 +978,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removed2FromFront.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 2, 3, 4, 5, 6, 100, 200, 300, 400, 500, 7, 8, 9 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -991,7 +991,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromEnd.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 0, 1, 2, 3, 4, 100, 200, 300, 400, 500, 5, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -1004,7 +1004,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removed2FromEnd.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 0, 1, 2, 3, 4, 100, 200, 300, 400, 500, 5, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -1017,7 +1017,7 @@ public class ConcurrentArrayListDataSetTest {
     toAddList.add(500);
     DataSet<Integer> result = removedFromBoth.addAll(5, toAddList).addAll(0, toAddList);  // perform two adds, one at the start, one at the middle
     Integer[] expectedResult = new Integer[]{ 100, 200, 300, 400, 500, 1, 2, 3, 4, 5, 100, 200, 300, 400, 500, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -1057,42 +1057,42 @@ public class ConcurrentArrayListDataSetTest {
   public void removeIndexNormalTest() {
     DataSet<Integer> result = orderedNormal.remove(9).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void removeIndexFrontRemovedTest() {
     DataSet<Integer> result = removedFromFront.remove(8).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void removeIndexFront2RemovedTest() {
     DataSet<Integer> result = removed2FromFront.remove(7).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 3, 4, 5, 6, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void removeIndexEndRemovedTest() {
     DataSet<Integer> result = removedFromEnd.remove(8).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void removeIndexEnd2RemovedTest() {
     DataSet<Integer> result = removed2FromEnd.remove(7).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
   public void removeIndexBothRemovedTest() {
     DataSet<Integer> result = removedFromBoth.remove(7).remove(5).remove(0);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 5, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
   }
   
   @Test
@@ -1104,7 +1104,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = orderedNormal.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(orderedNormal.size - toRemove.size() + 1, result.size);
   }
   
@@ -1117,7 +1117,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = removedFromFront.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(removedFromFront.size - toRemove.size() + 1, result.size);
   }
   
@@ -1130,7 +1130,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = removed2FromFront.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 3, 4, 6, 7, 8 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(removed2FromFront.size - toRemove.size() + 1, result.size);
   }
   
@@ -1143,7 +1143,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = removedFromEnd.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(removedFromEnd.size - toRemove.size() + 1, result.size);
   }
   
@@ -1156,7 +1156,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = removed2FromEnd.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 1, 2, 3, 4, 6 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(removed2FromEnd.size - toRemove.size() + 1, result.size);
   }
   
@@ -1169,7 +1169,7 @@ public class ConcurrentArrayListDataSetTest {
     toRemove.add(100);  // not found
     DataSet<Integer> result = removedFromBoth.removeAll(toRemove);
     Integer[] expectedResult = new Integer[]{ 2, 3, 4, 6, 7 };
-    assertTrue(result.equals(makeDataSet(expectedResult, 0, expectedResult.length)));
+    assertTrue(result.equalsEquivelent(makeDataSet(expectedResult, 0, expectedResult.length)));
     assertEquals(removedFromBoth.size - toRemove.size() + 1, result.size);
   }
 

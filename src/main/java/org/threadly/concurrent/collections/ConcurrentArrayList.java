@@ -8,11 +8,9 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.NoSuchElementException;
 import java.util.RandomAccess;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.LockSupport;
-
 import org.threadly.util.ArgumentVerifier;
+import org.threadly.util.MutablePair;
 
 /**
  * <p>A thread safe list implementation with an array back end.  Make sure to read the javadocs 
@@ -59,10 +57,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     return new DataSet<E>(EMPTY_OBJECT_ARRAY, 0, 0, frontPadding, rearPadding);
   }
   
-  private final AtomicReference<Thread> lockedThread;
-  private final ConcurrentLinkedQueue<Thread> waitingThreads;
-  private volatile int lockCount;
-  protected volatile DataSet<T> currentData;
+  protected final AtomicReference<MutablePair<Thread, DataSet<T>>> lockedThread;
+  protected final AtomicReference<DataSet<T>> currentData;
+  private int lockCount;
 
   /**
    * Constructs a new {@link ConcurrentArrayList}.
@@ -93,59 +90,81 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
   protected ConcurrentArrayList(DataSet<T> startSet) {
     ArgumentVerifier.assertNotNull(startSet, "startSet");
     
-    lockedThread = new AtomicReference<Thread>();
-    waitingThreads = new ConcurrentLinkedQueue<Thread>();
+    lockedThread = new AtomicReference<MutablePair<Thread, DataSet<T>>>();
+    currentData = new AtomicReference<DataSet<T>>(startSet);
     lockCount = 0;
-    currentData = startSet;
+  }
+  
+  public boolean threadHoldsLock() {
+    MutablePair<Thread, DataSet<T>> lockPair = lockedThread.get();
+    return lockPair != null && lockPair.getLeft() == Thread.currentThread();
   }
   
   public void lockForModifications() {
-    Thread currentThread = Thread.currentThread();
-    if (lockedThread.get() != currentThread) {
-      boolean added = false;
-      while (! lockedThread.compareAndSet(null, currentThread)) {
-        if (! added) {
-          waitingThreads.add(currentThread);
-          added = true;
-        }
-        /* we must try again after adding us to the waiting threads, 
-         * in case another thread released, and already checked waiting threads 
-         * before we were added 
-         */
-        if (lockedThread.compareAndSet(null, currentThread)) {
-          break;
-        } else {
-          LockSupport.park();
-          if (currentThread.isInterrupted()) {
-            throw new RuntimeException("TODO - should be InterruptedException");
-            // TODO - throw new InterruptedException();
-          }
-        }
-      }
-      if (added) {
-        waitingThreads.remove(currentThread); // no longer waiting, remove if still there
-      }
-      if (lockCount != 0) {
-        throw new RuntimeException();
-      }
+    MutablePair<Thread, DataSet<T>> lockPair = 
+        new MutablePair<Thread, DataSet<T>>(Thread.currentThread(), null);
+    MutablePair<Thread, DataSet<T>> currentLock = lockedThread.get();
+    if (currentLock != null && currentLock.getLeft() == lockPair.getLeft()) {
+      lockCount++;
+      return;
     }
     
+    while (! lockedThread.compareAndSet(null, lockPair)) {
+      Thread.yield();
+    }
+    
+    DataSet<T> data;
+    while (true) {
+      data = currentData.get();
+      if (currentData.compareAndSet(data, null)) {
+        break;
+      }
+    }
+    lockPair.setRight(data);
     lockCount++;
   }
   
   public void unlockForModifications() {
-    if (lockedThread.get() != Thread.currentThread()) {
+    if (! threadHoldsLock()) {
       throw new IllegalStateException("Thread not currently holding lock, lock holder: " + lockedThread.get());
     }
     
-    lockCount--;
-    
-    if (lockCount == 0) {
+    if (--lockCount == 0) {
+      currentData.set(lockedThread.get().getRight());
       lockedThread.set(null);
-      Thread waitingThread = waitingThreads.peek();
-      if (waitingThread != null) {
-        LockSupport.unpark(waitingThread);
+    }
+  }
+  
+  protected DataSet<T> getCurrentData() {
+    Boolean threadHoldsLock = null;
+    while (true) {
+      DataSet<T> result = currentData.get();
+      if (result != null) {
+        return result;
+      } else {
+        // cache value so that threads which don't hold the lock don't need to keep looking it up
+        if (threadHoldsLock == null) {
+          threadHoldsLock = threadHoldsLock();
+        }
+        if (threadHoldsLock()) {
+          return lockedThread.get().getRight();
+        } else {
+          Thread.yield();
+        }
       }
+    }
+  }
+  
+  protected boolean setCurrentData(DataSet<T> expectedData, DataSet<T> newData) {
+    if (currentData.get() == null) {
+      if (threadHoldsLock()) {
+        lockedThread.get().setRight(newData);
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return currentData.compareAndSet(expectedData, newData);
     }
   }
   
@@ -159,7 +178,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     ArgumentVerifier.assertNotNegative(frontPadding, "frontPadding");
     
     lockForModifications();
-    currentData.frontPadding = frontPadding;
+    getCurrentData().frontPadding = frontPadding;
     unlockForModifications();
   }
 
@@ -172,7 +191,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     ArgumentVerifier.assertNotNegative(rearPadding, "rearPadding");
     
     lockForModifications();
-    currentData.rearPadding = rearPadding;
+    getCurrentData().rearPadding = rearPadding;
     unlockForModifications();
   }
   
@@ -182,7 +201,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    * @return current amount to added padding to the front of new buffers
    */
   public int getFrontPadding() {
-    return currentData.frontPadding;
+    return getCurrentData().frontPadding;
   }
 
   /**
@@ -191,7 +210,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    * @return current amount to added padding to the rear of new buffers
    */
   public int getRearPadding() {
-    return currentData.rearPadding;
+    return getCurrentData().rearPadding;
   }
 
   /**
@@ -203,28 +222,28 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    * {@code 0}.
    */
   public void trimToSize() {
-    lockForModifications();
-    try {
-      currentData = currentData.trimToSize();
-    } finally {
-      unlockForModifications();
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (setCurrentData(currentData, currentData.trimToSize())) {
+        break;
+      }
     }
   }
 
   @Override
   public int size() {
-    return currentData.size;
+    return getCurrentData().size;
   }
 
   @Override
   public boolean isEmpty() {
-    return currentData.size == 0;
+    return getCurrentData().size == 0;
   }
   
   @Override
   public T get(int index) {
     try {
-      return currentData.get(index);
+      return getCurrentData().get(index);
     } catch (ArrayIndexOutOfBoundsException e) {
       // translate to the expected exception type
       throw new IndexOutOfBoundsException();
@@ -233,17 +252,17 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public int indexOf(Object o) {
-    return currentData.indexOf(o);
+    return getCurrentData().indexOf(o);
   }
 
   @Override
   public int lastIndexOf(Object o) {
-    return currentData.lastIndexOf(o);
+    return getCurrentData().lastIndexOf(o);
   }
 
   @Override
   public boolean contains(Object o) {
-    return currentData.indexOf(o) >= 0;
+    return getCurrentData().indexOf(o) >= 0;
   }
 
   @Override
@@ -252,7 +271,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       return true;
     }
     
-    DataSet<T> workingSet = currentData;
+    DataSet<T> workingSet = getCurrentData();
     Iterator<?> it = c.iterator();
     while (it.hasNext()) {
       if (workingSet.indexOf(it.next()) < 0) {
@@ -265,16 +284,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public Object[] toArray() {
-    DataSet<T> workingSet = currentData;
+    DataSet<T> workingSet = getCurrentData();
 
     return Arrays.copyOfRange(workingSet.dataArray, 
                               workingSet.dataStartIndex, workingSet.dataEndIndex);
   }
 
-  @SuppressWarnings("unchecked")
   @Override
+  @SuppressWarnings("unchecked")
   public <E> E[] toArray(E[] a) {
-    DataSet<T> workingSet = currentData;
+    DataSet<T> workingSet = getCurrentData();
     
     if (a.length < workingSet.size) {
       return (E[])Arrays.copyOfRange(workingSet.dataArray, 
@@ -294,11 +313,11 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       return false;
     }
 
-    lockForModifications();
-    try {
-      currentData = currentData.addToEnd(e);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (setCurrentData(currentData, currentData.addToEnd(e))) {
+        break;
+      }
     }
     
     return true;
@@ -319,12 +338,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (c.isEmpty()) {
       return false;
     }
-    
-    lockForModifications();
-    try {
-      currentData = currentData.addAll(c);
-    } finally {
-      unlockForModifications();
+
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (setCurrentData(currentData, currentData.addAll(c))) {
+        break;
+      }
     }
     
     return true;
@@ -347,16 +366,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (c.isEmpty()) {
       return false;
     }
-    
-    lockForModifications();
-    try {
+
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
       if (index > currentData.size) {
         throw new IndexOutOfBoundsException("Index is beyond the array size: " + index);
       }
-      
-      currentData = currentData.addAll(index, c);
-    } finally {
-      unlockForModifications();
+      DataSet<T> newData = currentData.addAll(index, c);
+      if (setCurrentData(currentData, newData)) {
+        break;
+      }
     }
     
     return true;
@@ -378,12 +397,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     
     DataSet<T> originalSet;
     DataSet<T> resultSet;
-    lockForModifications();
-    try {
-      originalSet = currentData;
-      currentData = resultSet = currentData.retainAll(c);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      originalSet = getCurrentData();
+      resultSet = originalSet.retainAll(c);
+      if (setCurrentData(originalSet, resultSet)) {
+        break;
+      }
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -391,11 +410,13 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public void clear() {
-    lockForModifications();
-    try {
-      currentData = makeEmptyDataSet(currentData.frontPadding, currentData.rearPadding);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      DataSet<T> workingData = getCurrentData();
+      if (setCurrentData(workingData, 
+                         ConcurrentArrayList.<T>makeEmptyDataSet(workingData.frontPadding, 
+                                                                 workingData.rearPadding))) {
+        break;
+      }
     }
   }
   
@@ -406,11 +427,11 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new UnsupportedOperationException("This structure can not accept nulls");
     }
 
-    lockForModifications();
-    try {
-      currentData = currentData.addToFront(e);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (setCurrentData(currentData, currentData.addToFront(e))) {
+        break;
+      }
     }
   }
 
@@ -421,11 +442,11 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new UnsupportedOperationException("This structure can not accept nulls");
     }
 
-    lockForModifications();
-    try {
-      currentData = currentData.addToEnd(e);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (setCurrentData(currentData, currentData.addToEnd(e))) {
+        break;
+      }
     }
   }
 
@@ -467,31 +488,29 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public T pollFirst() {
-    lockForModifications();
-    try {
-      T result = peekFirst();
-      if (result != null) {
-        currentData = currentData.remove(0);
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (currentData.size > 0) {
+        if (setCurrentData(currentData, currentData.remove(0))) {
+          return currentData.get(0);
+        }
+      } else {
+        return null;
       }
-      
-      return result;
-    } finally {
-      unlockForModifications();
     }
   }
 
   @Override
   public T pollLast() {
-    lockForModifications();
-    try {
-      T result = peekLast();
-      if (result != null) {
-        currentData = currentData.remove(currentData.size - 1);
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
+      if (currentData.size > 0) {
+        if (setCurrentData(currentData, currentData.remove(currentData.size - 1))) {
+          return currentData.get(currentData.size - 1);
+        }
+      } else {
+        return null;
       }
-      
-      return result;
-    } finally {
-      unlockForModifications();
     }
   }
 
@@ -522,7 +541,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public T peekFirst() {
-    DataSet<T> set = currentData;
+    DataSet<T> set = getCurrentData();
     if (set.size > 0) {
       return set.get(0);
     } else {
@@ -532,7 +551,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public T peekLast() {
-    DataSet<T> set = currentData;
+    DataSet<T> set = getCurrentData();
     if (set.size > 0) {
       return set.get(set.size - 1);
     } else {
@@ -548,12 +567,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
     DataSet<T> originalSet;
     DataSet<T> resultSet;
-    lockForModifications();
-    try {
-      originalSet = currentData;
-      currentData = resultSet = currentData.removeAll(c);
-    } finally {
-      unlockForModifications();
+    while (true) {
+      originalSet = getCurrentData();
+      resultSet = originalSet.removeAll(c);
+      if (setCurrentData(originalSet, resultSet)) {
+        break;
+      }
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -564,8 +583,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       return false;
     }
 
-    lockForModifications();
-    try {
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
       int index;
       if (searchBackwards) {
         index = currentData.lastIndexOf(o);
@@ -574,12 +593,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
       if (index < 0) {
         return false;
-      } else {
-        currentData = currentData.remove(index);
+      } else if (setCurrentData(currentData, currentData.remove(index))) {
         return true;
       }
-    } finally {
-      unlockForModifications();
     }
   }
 
@@ -604,20 +620,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new IndexOutOfBoundsException("Index can not be negative");
     }
     
-    DataSet<T> originalSet;
-    lockForModifications();
-    try {
-      if (index > currentData.size - 1) {
+    while (true) {
+      DataSet<T> originalSet = getCurrentData();
+      if (index > originalSet.size - 1) {
         throw new IndexOutOfBoundsException("Index is beyond the array max index: " + index);
       }
       
-      originalSet = currentData;
-      currentData = currentData.remove(index);
-    } finally {
-      unlockForModifications();
+      if (setCurrentData(originalSet, originalSet.remove(index))) {
+        return originalSet.get(index);
+      }
     }
-    
-    return originalSet.get(index);
   }
 
   @Override
@@ -656,20 +668,16 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new IndexOutOfBoundsException("Index can not be negative");
     }
     
-    DataSet<T> originalSet;
-    lockForModifications();
-    try {
-      if (index > currentData.size - 1) {
+    while (true) {
+      DataSet<T> originalSet = getCurrentData();
+      if (index > originalSet.size - 1) {
         throw new IndexOutOfBoundsException("Index is beyond the array max index: " + index);
       }
       
-      originalSet = currentData;
-      currentData = currentData.set(index, element);
-    } finally {
-      unlockForModifications();
+      if (setCurrentData(originalSet, originalSet.set(index, element))) {
+        return originalSet.get(index);
+      }
     }
-    
-    return originalSet.get(index);
   }
 
   @Override
@@ -677,16 +685,17 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (index < 0) {
       throw new IndexOutOfBoundsException("Index can not be negative");
     }
+
     
-    lockForModifications();
-    try {
-      if (index > currentData.size) {
+    while (true) {
+      DataSet<T> originalSet = getCurrentData();
+      if (index > originalSet.size) {
         throw new IndexOutOfBoundsException("Index is beyond the array size: " + index);
       }
       
-      currentData = currentData.add(index, element);
-    } finally {
-      unlockForModifications();
+      if (setCurrentData(originalSet, originalSet.add(index, element))) {
+        break;
+      }
     }
   }
   
@@ -715,8 +724,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       throw new IndexOutOfBoundsException("New index can not be negative");
     }
 
-    lockForModifications();
-    try {
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
       if (newIndex > currentData.size) {
         throw new IndexOutOfBoundsException(newIndex + " is beyond the array's size: " + 
                                               currentData.size);
@@ -734,9 +743,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
         return;
       }
 
-      currentData = currentData.reposition(index, newIndex);
-    } finally {
-      unlockForModifications();
+      if (setCurrentData(currentData, currentData.reposition(index, newIndex))) {
+        break;
+      }
     }
   }
   
@@ -758,9 +767,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     if (originalIndex == newIndex) {
       return;
     }
-    
-    lockForModifications();
-    try {
+
+    while (true) {
+      DataSet<T> currentData = getCurrentData();
       if (newIndex > currentData.size) {
         throw new IndexOutOfBoundsException("new index " + newIndex + 
                                               " is beyond the array's length: " + currentData.size);
@@ -769,9 +778,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
                                               " is beyond the array's length: " + currentData.size);
       }
       
-      currentData = currentData.reposition(originalIndex, newIndex);
-    } finally {
-      unlockForModifications();
+      if (setCurrentData(currentData, currentData.reposition(originalIndex, newIndex))) {
+        break;
+      }
     }
   }
 
@@ -787,12 +796,13 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
   @Override
   public ListIterator<T> listIterator(int index) {
-    return new DataSetListIterator(currentData, index);
+    return new DataSetListIterator(getCurrentData(), index);
   }
 
   @Override
   public Iterator<T> descendingIterator() {
-    final ListIterator<T> li = listIterator(currentData.size);
+    DataSet<T> workingSet = getCurrentData();
+    final ListIterator<T> li = new DataSetListIterator(workingSet, workingSet.size);
     return new Iterator<T>() {
       @Override
       public boolean hasNext() {
@@ -827,7 +837,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    */
   @Override
   public List<T> subList(int fromIndex, int toIndex) {
-    DataSet<T> workingData = currentData;
+    DataSet<T> workingData = getCurrentData();
     
     if (fromIndex < 0) {
       throw new IndexOutOfBoundsException("from index can not be negative");
@@ -843,7 +853,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
                                        workingData.dataStartIndex + fromIndex, 
                                        workingData.dataEndIndex - 
                                          (workingData.dataEndIndex - toIndex), 
-                                       currentData.frontPadding, currentData.rearPadding);
+                                       workingData.frontPadding, workingData.rearPadding);
     
     return new ConcurrentArrayList<T>(newSet);
   }
@@ -860,7 +870,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       return true;
     } else if (o instanceof ConcurrentArrayList) {
       ConcurrentArrayList cal = (ConcurrentArrayList)o;
-      return currentData.equalsEquivelent(cal.currentData);
+      return getCurrentData().equalsEquivelent(cal.getCurrentData());
     } else if (o instanceof List) {
       List list = (List)o;
       if (list.size() != this.size()) {
@@ -884,7 +894,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
   
   @Override
   public int hashCode() {
-    return currentData.hashCode();
+    return getCurrentData().contentsHashCode();
   }
   
   /**
@@ -951,10 +961,10 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       lockForModifications();
       try {
         // you can not cause concurrent modification exceptions with this implementation
-        if (currentData == dataSet) {
+        if (getCurrentData() == dataSet) {
           ConcurrentArrayList.this.remove(--nextIndex);
           
-          dataSet = currentData;
+          dataSet = getCurrentData();
         } else {
           int globalIndex = ConcurrentArrayList.this.indexOf(dataSet.get(nextIndex - 1));
           if (globalIndex >= 0) {
@@ -970,10 +980,10 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     public void set(T e) {
       lockForModifications();
       try {
-        if (currentData == dataSet) {
+        if (getCurrentData() == dataSet) {
           ConcurrentArrayList.this.set(nextIndex - 1, e);
           
-          dataSet = currentData;
+          dataSet = getCurrentData();
         } else {
           int globalIndex = ConcurrentArrayList.this.indexOf(dataSet.get(nextIndex - 1));
           if (globalIndex >= 0) {
@@ -989,12 +999,12 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     public void add(T e) {
       lockForModifications();
       try {
-        if (currentData == dataSet) {
+        if (getCurrentData() == dataSet) {
           ConcurrentArrayList.this.add(nextIndex, e);
           
           nextIndex++;
           
-          dataSet = currentData;
+          dataSet = getCurrentData();
         } else {
           int globalIndex = ConcurrentArrayList.this.indexOf(dataSet.get(nextIndex - 1));
           if (globalIndex >= 0) {
@@ -1491,7 +1501,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
     }
     
-    @Override
+    /*@Override
     public boolean equals(Object o) {
       if (this == o) {
         return true;
@@ -1502,7 +1512,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       } else {
         return false;
       }
-    }
+    }*/
     
     /**
      * Call to see if the lists are equivalently equal, meaning that 
@@ -1559,8 +1569,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
     }
     
-    @Override
-    public int hashCode() {
+    public int contentsHashCode() {
       int hashCode = 1;
       for (int i = dataStartIndex; i < dataEndIndex; i++) {
         Object obj = dataArray[i];
