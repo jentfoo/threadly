@@ -1,7 +1,6 @@
 package org.threadly.concurrent;
 
 import java.util.List;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,6 +43,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
   
   protected final WorkerPool workerPool;
   protected final QueueManager taskQueueManager;
+  protected final RejectedExecutionHandler rejectedExecutionHandler;
 
   /**
    * Constructs a new thread pool, though threads will be lazily started as it has tasks ready to 
@@ -95,9 +95,27 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    */
   public PriorityScheduler(int poolSize, TaskPriority defaultPriority, 
                            long maxWaitForLowPriorityInMs, boolean useDaemonThreads) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, null);
+  }
+
+  /**
+   * Constructs a new thread pool, though threads will be lazily started as it has tasks ready to 
+   * run.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority Default priority for tasks which are submitted without any specified priority
+   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
+   * @param useDaemonThreads {@code true} if newly created threads should be daemon
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public PriorityScheduler(int poolSize, TaskPriority defaultPriority, 
+                           long maxWaitForLowPriorityInMs, boolean useDaemonThreads, 
+                           RejectedExecutionHandler rejectedExecutionHandler) {
     this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
          new ConfigurableThreadFactory(PriorityScheduler.class.getSimpleName() + "-", 
-                                       true, useDaemonThreads, Thread.NORM_PRIORITY, null, null));
+                                       true, useDaemonThreads, Thread.NORM_PRIORITY, null, null), 
+         rejectedExecutionHandler);
   }
 
   /**
@@ -112,8 +130,25 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    */
   public PriorityScheduler(int poolSize, TaskPriority defaultPriority, 
                            long maxWaitForLowPriorityInMs, ThreadFactory threadFactory) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, threadFactory, null);
+  }
+
+  /**
+   * Constructs a new thread pool, though threads will be lazily started as it has tasks ready to 
+   * run.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority Default priority for tasks which are submitted without any specified priority
+   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public PriorityScheduler(int poolSize, TaskPriority defaultPriority, 
+                           long maxWaitForLowPriorityInMs, ThreadFactory threadFactory, 
+                           RejectedExecutionHandler rejectedExecutionHandler) {
     this(new WorkerPool(threadFactory, poolSize), 
-         defaultPriority, maxWaitForLowPriorityInMs);
+         defaultPriority, maxWaitForLowPriorityInMs, rejectedExecutionHandler);
   }
   
   /**
@@ -123,13 +158,19 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    * @param workerPool WorkerPool to handle accepting tasks and providing them to a worker for execution
    * @param defaultPriority Default priority to store in case no priority is provided for tasks
    * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
    */
   protected PriorityScheduler(WorkerPool workerPool, TaskPriority defaultPriority, 
-                              long maxWaitForLowPriorityInMs) {
+                              long maxWaitForLowPriorityInMs, 
+                              RejectedExecutionHandler rejectedExecutionHandler) {
     super(defaultPriority);
     
     this.workerPool = workerPool;
     taskQueueManager = new QueueManager(workerPool, maxWaitForLowPriorityInMs);
+    if (rejectedExecutionHandler == null) {
+      rejectedExecutionHandler = RejectedExecutionHandler.THROW_REJECTED_EXECUTION_EXCEPTION;
+    }
+    this.rejectedExecutionHandler = rejectedExecutionHandler;
     
     workerPool.start(taskQueueManager);
   }
@@ -374,7 +415,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    */
   protected void addToExecuteQueue(QueueSet queueSet, OneTimeTaskWrapper task) {
     if (workerPool.isShutdownStarted()) {
-      throw new RejectedExecutionException("Thread pool shutdown");
+      rejectedExecutionHandler.handleRejectedTask(task.task);
+      return; // in case exception is not thrown
     }
     
     queueSet.addExecute(task);
@@ -390,7 +432,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
    */
   protected void addToScheduleQueue(QueueSet queueSet, TaskWrapper task) {
     if (workerPool.isShutdownStarted()) {
-      throw new RejectedExecutionException("Thread pool shutdown");
+      rejectedExecutionHandler.handleRejectedTask(task.task);
+      return; // in case exception is not thrown
     }
     
     queueSet.addScheduled(task);

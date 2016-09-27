@@ -9,6 +9,7 @@ import java.util.concurrent.ThreadFactory;
 
 import org.threadly.concurrent.ConfigurableThreadFactory;
 import org.threadly.concurrent.PriorityScheduler;
+import org.threadly.concurrent.RejectedExecutionHandler;
 import org.threadly.concurrent.TaskPriority;
 import org.threadly.concurrent.collections.ConcurrentArrayList;
 import org.threadly.concurrent.statistics.PriorityStatisticManager.TaskStatWrapper;
@@ -102,7 +103,32 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
   public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
                                            long maxWaitForLowPriorityInMs, 
                                            boolean useDaemonThreads) {
-    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, 1000);
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, null);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.  
+   * 
+   * This defaults to inaccurate time.  Meaning that durations and delays may under report (but 
+   * NEVER OVER what they actually were).  This has the least performance impact.  If you want more 
+   * accurate time consider using one of the constructors that accepts a boolean for accurate time.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param useDaemonThreads {@code true} if newly created threads should be daemon
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, 
+                                           boolean useDaemonThreads, 
+                                           RejectedExecutionHandler rejectedExecutionHandler) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
+         useDaemonThreads, rejectedExecutionHandler, 1000);
   }
   
   /**
@@ -124,7 +150,32 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
   public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
                                            long maxWaitForLowPriorityInMs, 
                                            ThreadFactory threadFactory) {
-    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, threadFactory, 1000);
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, threadFactory, null);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.  
+   * 
+   * This defaults to inaccurate time.  Meaning that durations and delays may under report (but 
+   * NEVER OVER what they actually were).  This has the least performance impact.  If you want more 
+   * accurate time consider using one of the constructors that accepts a boolean for accurate time.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, 
+                                           ThreadFactory threadFactory, 
+                                           RejectedExecutionHandler rejectedExecutionHandler) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
+         threadFactory, rejectedExecutionHandler, 1000);
   }
   
   /**
@@ -208,7 +259,34 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
                                            long maxWaitForLowPriorityInMs, 
                                            boolean useDaemonThreads, int maxStatisticWindowSize) {
     this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, 
-         maxStatisticWindowSize, false);
+         null, maxStatisticWindowSize);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.  
+   * 
+   * This defaults to inaccurate time.  Meaning that durations and delays may under report (but 
+   * NEVER OVER what they actually were).  This has the least performance impact.  If you want more 
+   * accurate time consider using one of the constructors that accepts a boolean for accurate time.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param useDaemonThreads {@code true} if newly created threads should be daemon
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   * @param maxStatisticWindowSize maximum number of samples to keep internally
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, 
+                                           boolean useDaemonThreads, 
+                                           RejectedExecutionHandler rejectedExecutionHandler, 
+                                           int maxStatisticWindowSize) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, 
+         rejectedExecutionHandler, maxStatisticWindowSize, false);
   }
   
   /**
@@ -233,7 +311,34 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
                                            ThreadFactory threadFactory, 
                                            int maxStatisticWindowSize) {
     this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
-         threadFactory, maxStatisticWindowSize, false);
+         threadFactory, null, maxStatisticWindowSize);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.  
+   * 
+   * This defaults to inaccurate time.  Meaning that durations and delays may under report (but 
+   * NEVER OVER what they actually were).  This has the least performance impact.  If you want more 
+   * accurate time consider using one of the constructors that accepts a boolean for accurate time.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   * @param maxStatisticWindowSize maximum number of samples to keep internally
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, 
+                                           ThreadFactory threadFactory, 
+                                           RejectedExecutionHandler rejectedExecutionHandler, 
+                                           int maxStatisticWindowSize) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
+         threadFactory, rejectedExecutionHandler, maxStatisticWindowSize, false);
   }
 
   /**
@@ -305,10 +410,33 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
   public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
                                            long maxWaitForLowPriorityInMs, boolean useDaemonThreads, 
                                            int maxStatisticWindowSize, boolean accurateTime) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, useDaemonThreads, null, 
+         maxStatisticWindowSize, accurateTime);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param useDaemonThreads {@code true} if newly created threads should be daemon
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   * @param maxStatisticWindowSize maximum number of samples to keep internally
+   * @param accurateTime {@code true} to ensure that delays and durations are not under reported
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, boolean useDaemonThreads, 
+                                           RejectedExecutionHandler rejectedExecutionHandler, 
+                                           int maxStatisticWindowSize, boolean accurateTime) {
     this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
          new ConfigurableThreadFactory(PrioritySchedulerStatisticTracker.class.getSimpleName() + "-", 
                                        true, useDaemonThreads, Thread.NORM_PRIORITY, null, null), 
-         maxStatisticWindowSize, accurateTime);
+         rejectedExecutionHandler, maxStatisticWindowSize, accurateTime);
   }
   
   /**
@@ -329,9 +457,33 @@ public class PrioritySchedulerStatisticTracker extends PriorityScheduler
                                            long maxWaitForLowPriorityInMs, 
                                            ThreadFactory threadFactory, 
                                            int maxStatisticWindowSize, boolean accurateTime) {
+    this(poolSize, defaultPriority, maxWaitForLowPriorityInMs, 
+         threadFactory, null, maxStatisticWindowSize, accurateTime);
+  }
+  
+  /**
+   * Constructs a new thread pool, though no threads will be started till it accepts it's first 
+   * request.  This provides the extra parameters to tune what tasks submitted without a priority 
+   * will be scheduled as.  As well as the maximum wait for low priority tasks.  The longer low 
+   * priority tasks wait for a worker, the less chance they will have to create a thread.  But it 
+   * also makes low priority tasks execution time less predictable.
+   * 
+   * @param poolSize Thread pool size that should be maintained
+   * @param defaultPriority priority to give tasks which do not specify it
+   * @param maxWaitForLowPriorityInMs time low priority tasks wait for a worker
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   * @param maxStatisticWindowSize maximum number of samples to keep internally
+   * @param accurateTime {@code true} to ensure that delays and durations are not under reported
+   */
+  public PrioritySchedulerStatisticTracker(int poolSize, TaskPriority defaultPriority, 
+                                           long maxWaitForLowPriorityInMs, 
+                                           ThreadFactory threadFactory, 
+                                           RejectedExecutionHandler rejectedExecutionHandler, 
+                                           int maxStatisticWindowSize, boolean accurateTime) {
     super(new StatisticWorkerPool(threadFactory, poolSize, 
                                   new PriorityStatisticManager(maxStatisticWindowSize, accurateTime)), 
-          defaultPriority, maxWaitForLowPriorityInMs);
+          defaultPriority, maxWaitForLowPriorityInMs, rejectedExecutionHandler);
     
     this.statsManager = ((StatisticWorkerPool)workerPool).statsManager;
   }

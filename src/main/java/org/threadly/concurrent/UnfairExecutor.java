@@ -5,7 +5,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -133,6 +132,7 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
   private final Worker[] schedulers;
   private final AtomicBoolean shutdownStarted;
   private final TaskStripeGenerator stripeGenerator;
+  private final RejectedExecutionHandler rejectedExecutionHandler;
   
   /**
    * Constructs a new {@link UnfairExecutor} with a provided thread count.  This defaults to using 
@@ -166,7 +166,20 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
    * @param useDaemonThreads {@code true} if created threads should be daemon
    */
   public UnfairExecutor(int threadCount, boolean useDaemonThreads) {
-    this(threadCount, useDaemonThreads, TaskHashXorTimeStripeGenerator.instance());
+    this(threadCount, useDaemonThreads, null, null);
+  }
+
+  /**
+   * Constructs a new {@link UnfairExecutor} with a provided thread count.    This also defaults 
+   * to using the {@link TaskHashXorTimeStripeGenerator}.
+   * 
+   * @param threadCount Number of threads, recommended to be a prime number
+   * @param useDaemonThreads {@code true} if created threads should be daemon
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public UnfairExecutor(int threadCount, boolean useDaemonThreads, 
+                        RejectedExecutionHandler rejectedExecutionHandler) {
+    this(threadCount, useDaemonThreads, null, rejectedExecutionHandler);
   }
 
   /**
@@ -181,10 +194,27 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
    */
   public UnfairExecutor(int threadCount, boolean useDaemonThreads, 
                         TaskStripeGenerator stripeGenerator) {
+    this(threadCount, useDaemonThreads, stripeGenerator, null);
+  }
+
+  /**
+   * Constructs a new {@link UnfairExecutor} with a provided thread count.  
+   * 
+   * Possible built in stripe generators for use would be {@link AtomicStripeGenerator} or 
+   * {@link TaskHashXorTimeStripeGenerator}.
+   * 
+   * @param threadCount Number of threads, recommended to be a prime number
+   * @param useDaemonThreads {@code true} if created threads should be daemon
+   * @param stripeGenerator Generator for figuring out how a task is assigned to a thread
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public UnfairExecutor(int threadCount, boolean useDaemonThreads, 
+                        TaskStripeGenerator stripeGenerator, 
+                        RejectedExecutionHandler rejectedExecutionHandler) {
     this(threadCount, 
          new ConfigurableThreadFactory(UnfairExecutor.class.getSimpleName() + "-", true, 
                                        useDaemonThreads, Thread.NORM_PRIORITY, null, null), 
-         stripeGenerator);
+         stripeGenerator, rejectedExecutionHandler);
   }
 
   /**
@@ -195,7 +225,20 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
    * @param threadFactory thread factory for producing new threads within executor
    */
   public UnfairExecutor(int threadCount, ThreadFactory threadFactory) {
-    this(threadCount, threadFactory, TaskHashXorTimeStripeGenerator.instance());
+    this(threadCount, threadFactory, null, null);
+  }
+
+  /**
+   * Constructs a new {@link UnfairExecutor} with a provided thread count and factory.  This also 
+   * defaults to using the {@link TaskHashXorTimeStripeGenerator}.
+   * 
+   * @param threadCount Number of threads, recommended to be a prime number
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public UnfairExecutor(int threadCount, ThreadFactory threadFactory, 
+                        RejectedExecutionHandler rejectedExecutionHandler) {
+    this(threadCount, threadFactory, null, rejectedExecutionHandler);
   }
 
   /**
@@ -210,12 +253,35 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
    */
   public UnfairExecutor(int threadCount, ThreadFactory threadFactory, 
                         TaskStripeGenerator stripeGenerator) {
+    this(threadCount, threadFactory, stripeGenerator, null);
+  }
+
+  /**
+   * Constructs a new {@link UnfairExecutor} with a provided thread count and factory.  
+   * 
+   * Possible built in stripe generators for use would be {@link AtomicStripeGenerator} or 
+   * {@link TaskHashXorTimeStripeGenerator}.
+   * 
+   * @param threadCount Number of threads, recommended to be a prime number
+   * @param threadFactory thread factory for producing new threads within executor
+   * @param stripeGenerator Generator for figuring out how a task is assigned to a thread
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public UnfairExecutor(int threadCount, ThreadFactory threadFactory, 
+                        TaskStripeGenerator stripeGenerator, 
+                        RejectedExecutionHandler rejectedExecutionHandler) {
     ArgumentVerifier.assertGreaterThanZero(threadCount, "threadCount");
-    ArgumentVerifier.assertNotNull(stripeGenerator, "stripeGenerator");
     
     this.schedulers = new Worker[threadCount];
     this.shutdownStarted = new AtomicBoolean(false);
+    if (stripeGenerator == null) {
+      stripeGenerator = TaskHashXorTimeStripeGenerator.instance();
+    }
     this.stripeGenerator = stripeGenerator;
+    if (rejectedExecutionHandler == null) {
+      rejectedExecutionHandler = RejectedExecutionHandler.THROW_REJECTED_EXECUTION_EXCEPTION;
+    }
+    this.rejectedExecutionHandler = rejectedExecutionHandler;
     
     for (int i = 0; i < threadCount; i++) {
       schedulers[i] = new Worker(threadFactory);
@@ -243,7 +309,8 @@ public class UnfairExecutor extends AbstractSubmitterExecutor {
   @Override
   protected void doExecute(Runnable task) {
     if (shutdownStarted.get()) {
-      throw new RejectedExecutionException("Pool is shutdown");
+      rejectedExecutionHandler.handleRejectedTask(task);
+      return; // in case handler did not throw
     }
     
     schedulers[(int)(Math.abs(stripeGenerator.getStripe(task)) % schedulers.length)].addTask(task);

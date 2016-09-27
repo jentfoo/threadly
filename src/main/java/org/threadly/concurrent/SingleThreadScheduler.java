@@ -19,6 +19,7 @@ import org.threadly.util.ExceptionUtils;
  */
 public class SingleThreadScheduler extends AbstractPriorityScheduler {
   protected final SchedulerManager sManager;
+  protected final RejectedExecutionHandler rejectedExecutionHandler;
   
   /**
    * Constructs a new {@link SingleThreadScheduler}.  No threads will start until the first task 
@@ -59,9 +60,25 @@ public class SingleThreadScheduler extends AbstractPriorityScheduler {
    */
   public SingleThreadScheduler(TaskPriority defaultPriority, 
                                long maxWaitForLowPriorityInMs, boolean daemonThread) {
+    this(defaultPriority, maxWaitForLowPriorityInMs, daemonThread, null);
+  }
+  
+  /**
+   * Constructs a new {@link SingleThreadScheduler}.  No threads will start until the first task 
+   * is provided.
+   * 
+   * @param defaultPriority Default priority for tasks which are submitted without any specified priority
+   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
+   * @param daemonThread {@code true} if scheduler thread should be a daemon thread
+   * @param rejectedExecutionHandler Handler to accept tasks if pool is shutdown
+   */
+  public SingleThreadScheduler(TaskPriority defaultPriority, 
+                               long maxWaitForLowPriorityInMs, boolean daemonThread, 
+                               RejectedExecutionHandler rejectedExecutionHandler) {
     this(defaultPriority, maxWaitForLowPriorityInMs, 
          new ConfigurableThreadFactory(SingleThreadScheduler.class.getSimpleName() + "-",
-                                       true, daemonThread, Thread.NORM_PRIORITY, null, null));
+                                       true, daemonThread, Thread.NORM_PRIORITY, null, null), 
+         rejectedExecutionHandler);
   }
   
   /**
@@ -84,8 +101,23 @@ public class SingleThreadScheduler extends AbstractPriorityScheduler {
    */
   public SingleThreadScheduler(TaskPriority defaultPriority, 
                                long maxWaitForLowPriorityInMs, ThreadFactory threadFactory) {
+    this(defaultPriority, maxWaitForLowPriorityInMs, threadFactory, null);
+  }
+  
+  /**
+   * Constructs a new {@link SingleThreadScheduler}.  No threads will start until the first task 
+   * is provided.
+   * 
+   * @param defaultPriority Default priority for tasks which are submitted without any specified priority
+   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
+   * @param threadFactory factory to make thread for scheduler
+   */
+  public SingleThreadScheduler(TaskPriority defaultPriority, 
+                               long maxWaitForLowPriorityInMs, ThreadFactory threadFactory, 
+                               RejectedExecutionHandler rejectedExecutionHandler) {
     this(defaultPriority, 
-         new SchedulerManager(defaultPriority, maxWaitForLowPriorityInMs, threadFactory));
+         new SchedulerManager(defaultPriority, maxWaitForLowPriorityInMs, threadFactory), 
+         rejectedExecutionHandler);
   }
   
   /**
@@ -95,10 +127,15 @@ public class SingleThreadScheduler extends AbstractPriorityScheduler {
    * @param defaultPriority Default priority for tasks which are submitted without any specified priority
    * @param SchedulerManager Scheduler manager to run against
    */
-  protected SingleThreadScheduler(TaskPriority defaultPriority, SchedulerManager schedulerManager) {
+  protected SingleThreadScheduler(TaskPriority defaultPriority, SchedulerManager schedulerManager, 
+                                  RejectedExecutionHandler rejectedExecutionHandler) {
     super(defaultPriority);
     
     this.sManager = schedulerManager;
+    if (rejectedExecutionHandler == null) {
+      rejectedExecutionHandler = RejectedExecutionHandler.THROW_REJECTED_EXECUTION_EXCEPTION;
+    }
+    this.rejectedExecutionHandler = rejectedExecutionHandler;
   }
   
   /**
