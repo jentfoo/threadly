@@ -106,36 +106,6 @@ public abstract class SubmitterExecutorInterfaceTest {
     }
   }
   
-  @Test
-  public void executeWithFailureRunnableTest() {
-    SubmitterExecutorFactory factory = getSubmitterExecutorFactory();
-    try {
-      SubmitterExecutor executor = factory.makeSubmitterExecutor(TEST_QTY, false);
-      
-      List<TestRunnable> runnables = new ArrayList<TestRunnable>(TEST_QTY);
-      for (int i = 0; i < TEST_QTY; i++) {
-        if (i % 2 == 0) {
-          // add a failure runnable
-          executor.execute(new TestRuntimeFailureRunnable());
-        }
-        TestRunnable tr = new TestRunnable();
-        executor.execute(tr);
-        runnables.add(tr);
-      }
-      
-      // verify execution
-      Iterator<TestRunnable> it = runnables.iterator();
-      while (it.hasNext()) {
-        TestRunnable tr = it.next();
-        tr.blockTillFinished();
-        
-        assertEquals(1, tr.getRunCount());
-      }
-    } finally {
-      factory.shutdown();
-    }
-  }
-  
   @Test (expected = IllegalArgumentException.class)
   public void executeFail() {
     SubmitterExecutorFactory factory = getSubmitterExecutorFactory();

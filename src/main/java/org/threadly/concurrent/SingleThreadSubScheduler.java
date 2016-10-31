@@ -1,12 +1,12 @@
 package org.threadly.concurrent;
 
+import java.util.concurrent.Executor;
+
 public class SingleThreadSubScheduler extends AbstractSubmitterScheduler {// TODO - make priority scheduler
-  private final SubmitterScheduler delegateScheduler;
-  private final NoThreadScheduler noThreadScheduler;
-  private final TickTask tickTask;
+  protected final NoThreadScheduler noThreadScheduler;
+  protected final TickTask tickTask;
   
-  public SingleThreadSubScheduler(SubmitterScheduler delegateScheduler) {
-    this.delegateScheduler = delegateScheduler;
+  public SingleThreadSubScheduler(Executor delegateScheduler) {
     this.noThreadScheduler = new NoThreadScheduler();
     this.tickTask = new TickTask(delegateScheduler);
   }
@@ -29,8 +29,12 @@ public class SingleThreadSubScheduler extends AbstractSubmitterScheduler {// TOD
     tickTask.signalToRun();
   } 
   
+  public int getQueuedTaskCount() {
+    return noThreadScheduler.getQueuedTaskCount();
+  }
+  
   private class TickTask extends ReschedulingOperation {
-    protected TickTask(SubmitterScheduler delegateScheduler) {
+    protected TickTask(Executor delegateScheduler) {
       super(delegateScheduler, 0);
     }
 

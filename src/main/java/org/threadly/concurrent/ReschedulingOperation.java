@@ -1,5 +1,6 @@
 package org.threadly.concurrent;
 
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.threadly.util.ArgumentVerifier;
@@ -25,7 +26,7 @@ import org.threadly.util.ArgumentVerifier;
  * @since 4.9.0
  */
 public abstract class ReschedulingOperation {
-  private final SubmitterScheduler scheduler;
+  private final Executor scheduler;
   // -1 = not scheduled, 0 = scheduled, 1 = running, 2 = updated while running
   private final AtomicInteger taskState;
   private final CheckRunner runner;
@@ -37,7 +38,7 @@ public abstract class ReschedulingOperation {
    * @param scheduler Scheduler to execute on.
    * @param scheduleDelay Delay in milliseconds to schedule operation out when has stuff to do
    */
-  protected ReschedulingOperation(SubmitterScheduler scheduler, long scheduleDelay) {
+  protected ReschedulingOperation(Executor scheduler, long scheduleDelay) {
     ArgumentVerifier.assertNotNull(scheduler, "scheduler");
     
     this.scheduler = scheduler;
@@ -80,7 +81,7 @@ public abstract class ReschedulingOperation {
           if (scheduleDelay == 0) {
             scheduler.execute(runner);
           } else {
-            scheduler.schedule(runner, scheduleDelay);
+            ((SubmitterScheduler)scheduler).schedule(runner, scheduleDelay);
           }
           return;
         }
@@ -131,7 +132,7 @@ public abstract class ReschedulingOperation {
             if (scheduleDelay == 0) {
               scheduler.execute(this);
             } else {
-              scheduler.schedule(this, scheduleDelay);
+              ((SubmitterScheduler)scheduler).schedule(this, scheduleDelay);
             }
             break;
           }

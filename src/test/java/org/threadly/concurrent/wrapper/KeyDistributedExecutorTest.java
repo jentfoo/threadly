@@ -10,10 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -22,20 +19,11 @@ import org.junit.Test;
 import org.threadly.BlockingTestRunnable;
 import org.threadly.ThreadlyTestUtil;
 import org.threadly.concurrent.DoNothingRunnable;
-import org.threadly.concurrent.PriorityScheduler;
-import org.threadly.concurrent.StrictPriorityScheduler;
-import org.threadly.concurrent.SubmitterExecutor;
 import org.threadly.concurrent.TestCallable;
-import org.threadly.concurrent.TestRuntimeFailureRunnable;
 import org.threadly.concurrent.UnfairExecutor;
 import org.threadly.concurrent.lock.StripedLock;
-import org.threadly.concurrent.wrapper.limiter.ExecutorLimiter;
 import org.threadly.test.concurrent.TestCondition;
 import org.threadly.test.concurrent.TestRunnable;
-import org.threadly.test.concurrent.TestUtils;
-import org.threadly.util.ExceptionUtils;
-import org.threadly.util.SuppressedStackRuntimeException;
-import org.threadly.util.TestExceptionHandler;
 
 @SuppressWarnings("javadoc")
 public class KeyDistributedExecutorTest {
@@ -57,41 +45,16 @@ public class KeyDistributedExecutorTest {
     executor = null;
   }
   
-  protected Object agentLock;
   protected KeyDistributedExecutor distributor;
   
   @Before
   public void setup() {
-    StripedLock sLock = new StripedLock(1);
-    agentLock = sLock.getLock(null);  // there should be only one lock
-    distributor = new KeyDistributedExecutor(executor, sLock, Integer.MAX_VALUE, false);
+    distributor = new KeyDistributedExecutor(executor, new StripedLock(1), Integer.MAX_VALUE, false);
   }
   
   @After
   public void cleanup() {
-    agentLock = null;
     distributor = null;
-  }
-  
-  protected List<KDRunnable> populate(AddHandler ah) {
-    final List<KDRunnable> runs = new ArrayList<KDRunnable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
-    
-    // hold agent lock to prevent execution till ready
-    synchronized (agentLock) {
-      for (int i = 0; i < PARALLEL_LEVEL; i++) {
-        ThreadContainer tc = new ThreadContainer();
-        KDRunnable previous = null;
-        for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
-          KDRunnable tr = new KDRunnable(tc, previous);
-          runs.add(tr);
-          ah.addTDRunnable(tc, tr);
-          
-          previous = tr;
-        }
-      }
-    }
-    
-    return runs;
   }
   
   @SuppressWarnings("unused")
@@ -120,13 +83,6 @@ public class KeyDistributedExecutorTest {
       // expected
     }
     try {
-      new KeyDistributedExecutor(executor, null, 
-                                 Integer.MAX_VALUE, false);
-      fail("Exception should have been thrown");
-    } catch (IllegalArgumentException e) {
-      // expected
-    }
-    try {
       new KeyDistributedExecutor(executor, new StripedLock(1), -1, false);
       fail("Exception should have been thrown");
     } catch (IllegalArgumentException e) {
@@ -137,26 +93,6 @@ public class KeyDistributedExecutorTest {
   @Test
   public void getExecutorTest() {
     assertTrue(executor == distributor.getExecutor());
-  }
-  
-  @Test
-  public void keyBasedSubmitterConsistentThreadTest() {
-    List<KDRunnable> runs = populate(new AddHandler() {
-      @Override
-      public void addTDRunnable(Object key, KDRunnable tdr) {
-        SubmitterExecutor keySubmitter = distributor.getExecutorForKey(key);
-        keySubmitter.submit(tdr);
-      }
-    });
-    
-    Iterator<KDRunnable> it = runs.iterator();
-    while (it.hasNext()) {
-      KDRunnable tr = it.next();
-      tr.blockTillFinished(1000 * 20);
-      assertEquals(1, tr.getRunCount()); // verify each only ran once
-      assertTrue(tr.threadTracker.threadConsistent());  // verify that all threads for a given key ran in the same thread
-      assertTrue(tr.previousRanFirst());  // verify runnables were run in order
-    }
   }
   
   @Test (expected = IllegalArgumentException.class)
@@ -182,25 +118,6 @@ public class KeyDistributedExecutorTest {
   }
   
   @Test
-  public void executeConsistentThreadTest() {
-    List<KDRunnable> runs = populate(new AddHandler() {
-      @Override
-      public void addTDRunnable(Object key, KDRunnable tdr) {
-        distributor.execute(key, tdr);
-      }
-    });
-
-    Iterator<KDRunnable> it = runs.iterator();
-    while (it.hasNext()) {
-      KDRunnable tr = it.next();
-      tr.blockTillFinished(20 * 1000);
-      assertEquals(1, tr.getRunCount()); // verify each only ran once
-      assertTrue(tr.threadTracker.threadConsistent());  // verify that all threads for a given key ran in the same thread
-      assertTrue(tr.previousRanFirst());  // verify runnables were run in order
-    }
-  }
-  
-  @Test
   public void submitRunnableFail() {
     try {
       distributor.submit(null, DoNothingRunnable.instance());
@@ -213,53 +130,6 @@ public class KeyDistributedExecutorTest {
       fail("Exception should have thrown");
     } catch (IllegalArgumentException e) {
       // expected
-    }
-  }
-  
-  @Test
-  public void submitRunnableConsistentThreadTest() {
-    List<KDRunnable> runs = populate(new AddHandler() {
-      @Override
-      public void addTDRunnable(Object key, KDRunnable tdr) {
-        distributor.submit(key, tdr);
-      }
-    });
-    
-    Iterator<KDRunnable> it = runs.iterator();
-    while (it.hasNext()) {
-      KDRunnable tr = it.next();
-      tr.blockTillFinished(20 * 1000);
-      assertEquals(1, tr.getRunCount()); // verify each only ran once
-      assertTrue(tr.threadTracker.threadConsistent());  // verify that all threads for a given key ran in the same thread
-      assertTrue(tr.previousRanFirst());  // verify runnables were run in order
-    }
-  }
-  
-  @Test
-  public void submitCallableConsistentThreadTest() {
-    List<KDCallable> runs = new ArrayList<KDCallable>(PARALLEL_LEVEL * RUNNABLE_COUNT_PER_LEVEL);
-    
-    // hold agent lock to avoid execution till all are submitted
-    synchronized (agentLock) {
-      for (int i = 0; i < PARALLEL_LEVEL; i++) {
-        ThreadContainer tc = new ThreadContainer();
-        KDCallable previous = null;
-        for (int j = 0; j < RUNNABLE_COUNT_PER_LEVEL; j++) {
-          KDCallable tr = new KDCallable(tc, previous);
-          runs.add(tr);
-          distributor.submit(tc, tr);
-          
-          previous = tr;
-        }
-      }
-    }
-    
-    Iterator<KDCallable> it = runs.iterator();
-    while (it.hasNext()) {
-      KDCallable tr = it.next();
-      tr.blockTillFinished(20 * 1000);
-      assertTrue(tr.threadTracker.threadConsistent());  // verify that all threads for a given key ran in the same thread
-      assertTrue(tr.previousRanFirst());  // verify runnables were run in order
     }
   }
   
@@ -345,23 +215,6 @@ public class KeyDistributedExecutorTest {
   }
   
   @Test
-  public void taskExceptionTest() {
-    Integer key = 1;
-    TestExceptionHandler teh = new TestExceptionHandler();
-    final RuntimeException testException = new SuppressedStackRuntimeException();
-    ExceptionUtils.setDefaultExceptionHandler(teh);
-    TestRunnable exceptionRunnable = new TestRuntimeFailureRunnable(testException);
-    TestRunnable followRunnable = new TestRunnable();
-    distributor.execute(key, exceptionRunnable);
-    distributor.execute(key, followRunnable);
-    exceptionRunnable.blockTillFinished();
-    followRunnable.blockTillStarted();  // verify that it ran despite the exception
-    
-    assertEquals(1, teh.getCallCount());
-    assertEquals(testException, teh.getLastThrowable());
-  }
-  
-  @Test
   public void limitExecutionPerCycleTest() {
     final AtomicInteger execCount = new AtomicInteger(0);
     KeyDistributedExecutor distributor = new KeyDistributedExecutor(1, new Executor() {
@@ -383,7 +236,6 @@ public class KeyDistributedExecutorTest {
     distributor.execute(this, secondTask);
     
     assertEquals(1, distributor.taskWorkers.size());
-    assertEquals(1, distributor.taskWorkers.get(this).queue.size());
     
     btr.unblock();
     
@@ -391,56 +243,6 @@ public class KeyDistributedExecutorTest {
     
     // verify worker execed out between task
     assertEquals(2, execCount.get());
-  }
-  
-  @Test
-  public void limitExecutionPerCycleStressTest() {
-    PriorityScheduler scheduler = new StrictPriorityScheduler(3);
-    final AtomicBoolean testComplete = new AtomicBoolean(false);
-    try {
-      final Integer key1 = 1;
-      final Integer key2 = 2;
-      Executor singleThreadedExecutor = new ExecutorLimiter(scheduler, 1);
-      final KeyDistributedExecutor distributor = new KeyDistributedExecutor(2, singleThreadedExecutor, 2);
-      final AtomicInteger waitingTasks = new AtomicInteger();
-      final AtomicReference<TestRunnable> lastTestRunnable = new AtomicReference<TestRunnable>();
-      scheduler.execute(new Runnable() {  // execute thread to add for key 1
-        @Override
-        public void run() {
-          while (! testComplete.get()) {
-            TestRunnable next = new TestRunnable() {
-              @Override
-              public void handleRunStart() {
-                waitingTasks.decrementAndGet();
-                
-                TestUtils.sleep(20);  // wait to make sure producer is faster than executor
-              }
-            };
-            lastTestRunnable.set(next);
-            waitingTasks.incrementAndGet();
-            distributor.execute(key1, next);
-          }
-        }
-      });
-      
-      // block till there is for sure a backup of key1 tasks
-      new TestCondition() {
-        @Override
-        public boolean get() {
-          return waitingTasks.get() > 10;
-        }
-      }.blockTillTrue();
-      
-      TestRunnable key2Runnable = new TestRunnable();
-      distributor.execute(key2, key2Runnable);
-      TestRunnable lastKey1Runnable = lastTestRunnable.get();
-      key2Runnable.blockTillStarted();  // will throw exception if not started
-      // verify it ran before the lastKey1Runnable
-      assertFalse(lastKey1Runnable.ranOnce());
-    } finally {
-      testComplete.set(true);
-      scheduler.shutdownNow();
-    }
   }
   
   private static void getTaskQueueSizeSimpleTest(boolean accurateDistributor) {
