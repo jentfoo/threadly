@@ -281,12 +281,17 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * @param task Task to insert into the schedule queue
      */
     public void addScheduled(TaskWrapper task) {
-      int insertionIndex;
+      int optimisticDataState = scheduleQueue.getDataModificationState();
+      ConcurrentArrayList<TaskWrapper> scheduleQueueCopy = scheduleQueue.copy();
+      int insertionIndex = SortUtils.getInsertionEndIndex((index) -> scheduleQueueCopy.get(index).getRunTime(), 
+                                                          scheduleQueueCopy.size() - 1, 
+                                                          task.getRunTime(), true);
       synchronized (scheduleQueue.getModificationLock()) {
-        insertionIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
-                                                        scheduleQueue.size() - 1, 
-                                                        task.getRunTime(), true);
-        
+        if (optimisticDataState != scheduleQueue.getDataModificationState()) {
+          insertionIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
+                                                          scheduleQueue.size() - 1, 
+                                                          task.getRunTime(), true);
+        }
         scheduleQueue.add(insertionIndex, task);
       }
       
@@ -816,20 +821,35 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * queue should be.
      */
     protected void reschedule() {
+      int optimisticDataState = queueSet.scheduleQueue.getDataModificationState();
       int insertionIndex = -1;
+      ConcurrentArrayList<TaskWrapper> scheduleQueueCopy = queueSet.scheduleQueue.copy();
+      int currentIndex = scheduleQueueCopy.lastIndexOf(this);
+      if (currentIndex > 0) {
+        insertionIndex = SortUtils.getInsertionEndIndex((index) -> scheduleQueueCopy.get(index).getRunTime(), 
+                                                        scheduleQueueCopy.size() - 1, 
+                                                        nextRunTime, true);
+      } else if (currentIndex == 0) {
+        insertionIndex = 0;
+      } else {
+        // task removed, no-op, but might as well tidy up the state even though nothing cares
+      }
       synchronized (queueSet.scheduleQueue.getModificationLock()) {
-        int currentIndex = queueSet.scheduleQueue.lastIndexOf(this);
-        if (currentIndex > 0) {
-          insertionIndex = SortUtils.getInsertionEndIndex(queueSet.scheduleQueueRunTimeByIndex, 
-                                                          queueSet.scheduleQueue.size() - 1, 
-                                                          nextRunTime, true);
-          
-          queueSet.scheduleQueue.reposition(currentIndex, insertionIndex);
-        } else if (currentIndex == 0) {
-          insertionIndex = 0;
-        } else {
-          // task removed, no-op, but might as well tidy up the state even though nothing cares
+        if (optimisticDataState != queueSet.scheduleQueue.getDataModificationState()) {
+          currentIndex = queueSet.scheduleQueue.lastIndexOf(this);
+          if (currentIndex > 0) {
+            insertionIndex = SortUtils.getInsertionEndIndex(queueSet.scheduleQueueRunTimeByIndex, 
+                                                            queueSet.scheduleQueue.size() - 1, 
+                                                            nextRunTime, true);
+          } else if (currentIndex == 0) {
+            insertionIndex = 0;
+          } else {
+            // task removed, no-op, but might as well tidy up the state even though nothing cares
+            insertionIndex = -1;
+          }
         }
+        
+        queueSet.scheduleQueue.reposition(currentIndex, insertionIndex);
         
         // we can only update executing AFTER the reposition has finished
         // The synchronization lock must be held during this because changing executing

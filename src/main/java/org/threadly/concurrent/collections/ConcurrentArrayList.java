@@ -57,6 +57,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
   
   protected final Object modificationLock;
   protected volatile DataSet<T> currentData;
+  protected volatile int dataModificationCount; // can overflow
   
   /**
    * Constructs a new {@link ConcurrentArrayList} with a new internal NativeLock implementation.
@@ -116,7 +117,8 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     }
     
     this.modificationLock = modificationLock;
-    currentData = startSet;
+    this.currentData = startSet;
+    this.dataModificationCount = 0;
   }
   
   /**
@@ -129,6 +131,10 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
    */
   public Object getModificationLock() {
     return modificationLock;
+  }
+  
+  public int getDataModificationState() {
+    return dataModificationCount;
   }
   
   /**
@@ -275,6 +281,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     
     synchronized (modificationLock) {
       currentData = currentData.addToEnd(e);
+      dataModificationCount++;
     }
     
     return true;
@@ -298,6 +305,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
 
     synchronized (modificationLock) {
       currentData = currentData.addAll(c);
+      dataModificationCount++;
     }
     
     return true;
@@ -327,6 +335,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
       
       currentData = currentData.addAll(index, c);
+      dataModificationCount++;
     }
     
     return true;
@@ -351,6 +360,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     synchronized (modificationLock) {
       originalSet = currentData;
       currentData = resultSet = currentData.retainAll(c);
+      if (originalSet != resultSet) {
+        dataModificationCount++;
+      }
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -360,6 +372,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
   public void clear() {
     synchronized (modificationLock) {
       currentData = makeEmptyDataSet(currentData.frontPadding, currentData.rearPadding);
+      dataModificationCount++;
     }
   }
   
@@ -372,6 +385,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     
     synchronized (modificationLock) {
       currentData = currentData.addToFront(e);
+      dataModificationCount++;
     }
   }
 
@@ -384,6 +398,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     
     synchronized (modificationLock) {
       currentData = currentData.addToEnd(e);
+      dataModificationCount++;
     }
   }
 
@@ -429,6 +444,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       T result = peekFirst();
       if (result != null) {
         currentData = currentData.remove(0);
+        dataModificationCount++;
       }
       
       return result;
@@ -441,6 +457,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       T result = peekLast();
       if (result != null) {
         currentData = currentData.remove(currentData.size - 1);
+        dataModificationCount++;
       }
       
       return result;
@@ -503,6 +520,9 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
     synchronized (modificationLock) {
       originalSet = currentData;
       currentData = resultSet = currentData.removeAll(c);
+      if (originalSet != resultSet) {
+        dataModificationCount++;
+      }
     }
     
     return ! resultSet.equalsExactly(originalSet);
@@ -524,6 +544,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
         return false;
       } else {
         currentData = currentData.remove(index);
+        dataModificationCount++;
         return true;
       }
     }
@@ -558,6 +579,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       
       originalSet = currentData;
       currentData = currentData.remove(index);
+      dataModificationCount++;
     }
     
     return originalSet.get(index);
@@ -607,6 +629,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       
       originalSet = currentData;
       currentData = currentData.set(index, element);
+      dataModificationCount++;
     }
     
     return originalSet.get(index);
@@ -624,6 +647,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
       
       currentData = currentData.add(index, element);
+      dataModificationCount++;
     }
   }
   
@@ -669,6 +693,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
 
       currentData = currentData.reposition(index, newIndex);
+      dataModificationCount++;
     }
   }
   
@@ -701,6 +726,7 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
       }
       
       currentData = currentData.reposition(originalIndex, newIndex);
+      dataModificationCount++;
     }
   }
 
@@ -770,6 +796,17 @@ public class ConcurrentArrayList<T> implements List<T>, Deque<T>, RandomAccess {
                                       workingData.dataStartIndex + fromIndex, 
                                       workingData.dataEndIndex - 
                                         (workingData.dataEndIndex - toIndex), 
+                                      currentData.frontPadding, currentData.rearPadding);
+    
+    return new ConcurrentArrayList<>(newSet, modificationLock);
+  }
+  
+  public ConcurrentArrayList<T> copy() {
+    DataSet<T> workingData = currentData;
+    DataSet<T> newSet = new DataSet<>(workingData.dataArray, 
+                                      workingData.dataStartIndex, 
+                                      workingData.dataEndIndex - 
+                                        (workingData.dataEndIndex), 
                                       currentData.frontPadding, currentData.rearPadding);
     
     return new ConcurrentArrayList<>(newSet, modificationLock);
