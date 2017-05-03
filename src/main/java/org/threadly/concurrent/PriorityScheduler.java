@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.threadly.util.AbstractService;
 import org.threadly.util.ArgumentVerifier;
@@ -376,6 +377,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     protected final AtomicReference<Worker> idleWorker;
     protected final AtomicInteger currentPoolSize;
     protected final Object workerStopNotifyLock;
+    protected final ReentrantLock queueUpdateLock;
     private final AtomicBoolean shutdownStarted;
     private volatile boolean shutdownFinishing; // once true, never goes to false
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
@@ -395,6 +397,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       idleWorker = new AtomicReference<>(null);
       currentPoolSize = new AtomicInteger(0);
       workerStopNotifyLock = new Object();
+      queueUpdateLock = new ReentrantLock();
       
       this.threadFactory = threadFactory;
       this.maxPoolSize = poolSize;
@@ -713,8 +716,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       boolean queued = false;
       try {
         while (true) {
-          if (waitingForQueueCheck) {
+          if (queueUpdateLock.tryLock()) {
             waitingForQueueCheck = false;
+            queueUpdateLock.unlock();
           }
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
@@ -790,8 +794,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         }
         
         // wake up next worker so he can check if tasks are ready to consume
-        if (! waitingForQueueCheck) {
+        if (! waitingForQueueCheck && queueUpdateLock.tryLock()) {
           handleQueueUpdate();
+          queueUpdateLock.unlock();
         }
         
         if (! interruptedChecked) {
