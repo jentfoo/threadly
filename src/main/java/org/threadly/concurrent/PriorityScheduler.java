@@ -713,7 +713,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       boolean queued = false;
       try {
         while (true) {
-          waitingForQueueCheck = false;
+          if (waitingForQueueCheck) {
+            waitingForQueueCheck = false;
+          }
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
             if (queued) {
