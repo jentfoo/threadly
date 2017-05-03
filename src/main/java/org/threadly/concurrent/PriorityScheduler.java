@@ -380,7 +380,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     private volatile boolean shutdownFinishing; // once true, never goes to false
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
     private volatile long workerTimedParkRunTime;
-    private volatile boolean waitingForUnpark;
+    private volatile boolean waitingForQueueCheck;
     private QueueManager queueManager;  // set before any threads started
     
     protected WorkerPool(ThreadFactory threadFactory, int poolSize) {
@@ -399,7 +399,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       this.threadFactory = threadFactory;
       this.maxPoolSize = poolSize;
       this.workerTimedParkRunTime = Long.MAX_VALUE;
-      this.waitingForUnpark = false;
+      this.waitingForQueueCheck = false;
       shutdownStarted = new AtomicBoolean(false);
       shutdownFinishing = false;
     }
@@ -560,7 +560,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         
         if (poolSizeIncrease) {
           // now that pool size increased, start a worker so workers we can for the waiting tasks
-          wakeupWorker(false);
+          handleQueueUpdate();
         } else {
           addPoolStateChangeTask(new InternalRunnable() {
             @Override
@@ -713,12 +713,12 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       boolean queued = false;
       try {
         while (true) {
+          waitingForQueueCheck = false;
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
             if (queued) {
               // we can only park after we have queued, then checked again for a result
               LockSupport.park();
-              waitingForUnpark = false;
               worker.waitingForUnpark = false;
               continue;
             } else {
@@ -755,14 +755,12 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
                   // we can only park after we have queued, then checked again for a result
                   workerTimedParkRunTime = nextTask.getPureRunTime();
                   LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * taskDelay);
-                  waitingForUnpark = false;
                   worker.waitingForUnpark = false;
                   workerTimedParkRunTime = Long.MAX_VALUE;
                   continue;
                 } else {
                   // there is another worker already doing a timed park, so we can wait till woken up
                   LockSupport.park();
-                  waitingForUnpark = false;
                   worker.waitingForUnpark = false;
                   continue;
                 }
@@ -786,12 +784,13 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       } finally {
         // if queued, we must now remove ourselves, since worker is about to either shutdown or become active
         if (queued) {
-          waitingForUnpark = false;
           removeWorkerFromIdleChain(worker);
         }
         
         // wake up next worker so he can check if tasks are ready to consume
-        wakeupWorker(false);
+        if (! waitingForQueueCheck) {
+          handleQueueUpdate();
+        }
         
         if (! interruptedChecked) {
           // reset interrupted status
@@ -802,10 +801,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
 
     @Override
     public void handleQueueUpdate() {
-      wakeupWorker(true);
-    }
-    
-    protected void wakeupWorker(boolean queueUpdate) {
+      waitingForQueueCheck = true;
       while (true) {
         Worker idleWorker = this.idleWorker.get();
         if (idleWorker == null) {
@@ -821,8 +817,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
             break;
           }
         } else {
-          if (! idleWorker.waitingForUnpark && (queueUpdate || ! waitingForUnpark)) {
-            waitingForUnpark = true;
+          if (! idleWorker.waitingForUnpark) {
             idleWorker.waitingForUnpark = true;
             LockSupport.unpark(idleWorker.thread);
           }
