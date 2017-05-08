@@ -799,16 +799,13 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
 
     @Override
     public void handleQueueUpdate() {
-      if (waitingForQueueCheck) {
-        return;
-      }
-      waitingForQueueCheck = true;
       while (true) {
         Worker idleWorker = this.idleWorker.get();
         if (idleWorker == null) {
           int casSize = currentPoolSize.get();
           if (casSize < maxPoolSize && ! shutdownFinishing) {
             if (currentPoolSize.compareAndSet(casSize, casSize + 1)) {
+              waitingForQueueCheck = true;
               // start a new worker for the next task
               makeNewWorker();
               break;
@@ -818,7 +815,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
             break;
           }
         } else {
-          if (! idleWorker.waitingForUnpark) {
+          if (! waitingForQueueCheck && ! idleWorker.waitingForUnpark) {
+            waitingForQueueCheck = true;
             idleWorker.waitingForUnpark = true;
             LockSupport.unpark(idleWorker.thread);
           }
