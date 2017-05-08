@@ -380,6 +380,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     private volatile boolean shutdownFinishing; // once true, never goes to false
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
     private volatile long workerTimedParkRunTime;
+    private volatile boolean waitingForQueueCheck;
     private QueueManager queueManager;  // set before any threads started
     
     protected WorkerPool(ThreadFactory threadFactory, int poolSize) {
@@ -398,6 +399,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       this.threadFactory = threadFactory;
       this.maxPoolSize = poolSize;
       this.workerTimedParkRunTime = Long.MAX_VALUE;
+      this.waitingForQueueCheck = false;
       shutdownStarted = new AtomicBoolean(false);
       shutdownFinishing = false;
     }
@@ -711,6 +713,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       boolean queued = false;
       try {
         while (true) {
+          waitingForQueueCheck = false;
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
             if (queued) {
@@ -785,9 +788,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         }
         
         // wake up next worker so he can check if tasks are ready to consume
-        if (workerTimedParkRunTime == Long.MAX_VALUE || currentPoolSize.get() < maxPoolSize) {
-          handleQueueUpdate();
-        }
+        handleQueueUpdate();
         
         if (! interruptedChecked) {
           // reset interrupted status
@@ -798,9 +799,13 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
 
     @Override
     public void handleQueueUpdate() {
+      if (waitingForQueueCheck) {
+        return;
+      }
+      waitingForQueueCheck = true;
       while (true) {
-        Worker nextIdleWorker = idleWorker.get();
-        if (nextIdleWorker == null) {
+        Worker idleWorker = this.idleWorker.get();
+        if (idleWorker == null) {
           int casSize = currentPoolSize.get();
           if (casSize < maxPoolSize && ! shutdownFinishing) {
             if (currentPoolSize.compareAndSet(casSize, casSize + 1)) {
@@ -813,9 +818,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
             break;
           }
         } else {
-          if (! nextIdleWorker.waitingForUnpark) {
-            nextIdleWorker.waitingForUnpark = true;
-            LockSupport.unpark(nextIdleWorker.thread);
+          if (! idleWorker.waitingForUnpark) {
+            idleWorker.waitingForUnpark = true;
+            LockSupport.unpark(idleWorker.thread);
           }
           break;
         }
