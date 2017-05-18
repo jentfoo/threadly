@@ -8,6 +8,7 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.threadly.concurrent.RunnableCallableAdapter;
@@ -49,6 +50,7 @@ public class KeyDistributedExecutor {
   protected final int maxTasksPerCycle;
   protected final WorkerFactory wFactory;
   protected final ConcurrentHashMap<Object, TaskQueueWorker> taskWorkers;
+  private final AtomicReference<Queue<Runnable>> availableQueue;
   
   /**
    * Constructor to use a provided executor implementation for running tasks.  
@@ -277,6 +279,7 @@ public class KeyDistributedExecutor {
     }
     this.taskWorkers = new ConcurrentHashMap<>(mapInitialSize, 
                                                CONCURRENT_HASH_MAP_LOAD_FACTOR, mapConcurrencyLevel);
+    availableQueue = new AtomicReference<>(null);
   }
   
   /**
@@ -495,7 +498,14 @@ public class KeyDistributedExecutor {
      */
     protected void add(Runnable task) {
       if (queue == null) {
-        queue = new ArrayDeque<>(ARRAY_DEQUE_INITIAL_SIZE);
+        while ((queue = availableQueue.get()) != null) {
+          if (availableQueue.compareAndSet(queue, null)) {
+            break;
+          }
+        }
+        if (queue == null) {
+          queue = new ArrayDeque<>(ARRAY_DEQUE_INITIAL_SIZE);
+        }
       }
       queue.add(task);
     }
@@ -560,6 +570,10 @@ public class KeyDistributedExecutor {
         
         for (Runnable r : nextQueue) {
           runTask(r);
+        }
+        if (availableQueue.get() == null) {
+          nextQueue.clear();
+          availableQueue.compareAndSet(null, nextQueue);
         }
       }
     }
