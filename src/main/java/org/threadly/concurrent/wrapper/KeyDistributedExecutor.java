@@ -43,6 +43,7 @@ public class KeyDistributedExecutor {
   protected static final short CONCURRENT_HASH_MAP_MAX_INITIAL_SIZE = 64;
   protected static final short CONCURRENT_HASH_MAP_MAX_CONCURRENCY_LEVEL = 32;
   protected static final short ARRAY_DEQUE_INITIAL_SIZE = 8;  // minimum is 8, should be 2^X
+  protected static final ThreadLocal<TaskQueueWorker> THREAD_LOCAL_WORKER = new ThreadLocal<>();
   
   protected final Executor executor;
   protected final StripedLock sLock;
@@ -384,22 +385,30 @@ public class KeyDistributedExecutor {
    * @param Executor to run worker on (if it needs to be started)
    */
   protected void addTask(Object threadKey, Runnable task, Executor executor) {
-    TaskQueueWorker worker;
-    Object workerLock = sLock.getLock(threadKey);
-    synchronized (workerLock) {
-      worker = taskWorkers.get(threadKey);
-      if (worker == null) {
-        worker = wFactory.build(threadKey, workerLock, task);
-        taskWorkers.put(threadKey, worker);
-      } else {
-        worker.add(task);
-        // return so we wont start worker
-        return;
+    TaskQueueWorker threadLocalWorker = THREAD_LOCAL_WORKER.get();
+    if (threadLocalWorker != null && threadLocalWorker.mapKey.equals(threadKey)) {
+      Object workerLock = sLock.getLock(threadKey);
+      synchronized (workerLock) { // still need to lock due to possible task submission on other threads
+        threadLocalWorker.add(task);
       }
+    } else {
+      TaskQueueWorker worker;
+      Object workerLock = sLock.getLock(threadKey);
+      synchronized (workerLock) {
+        worker = taskWorkers.get(threadKey);
+        if (worker == null) {
+          worker = wFactory.build(threadKey, workerLock, task);
+          taskWorkers.put(threadKey, worker);
+        } else {
+          worker.add(task);
+          // return so we wont start worker
+          return;
+        }
+      }
+  
+      // must run execute outside of lock
+      executor.execute(worker);
     }
-
-    // must run execute outside of lock
-    executor.execute(worker);
   }
   
   /**
@@ -512,6 +521,15 @@ public class KeyDistributedExecutor {
     
     @Override
     public void run() {
+      try {
+        THREAD_LOCAL_WORKER.set(this);
+        runTasks();
+      } finally {
+        THREAD_LOCAL_WORKER.set(null);
+      }
+    }
+    
+    public void runTasks() {
       int consumedItems = 0;
       // firstTask may be null if we exceeded our maxTasksPerCycle
       if (firstTask != null) {
