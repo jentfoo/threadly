@@ -386,10 +386,17 @@ public class ExceptionUtilsTest {
   }
   
   @Test
-  public void getCauseOfTypesTest() {
+  public void getCauseOfTypesListTest() {
     IllegalArgumentException expected = new IllegalArgumentException(new Exception());
     Exception e = new Exception(expected);
     assertTrue(expected == ExceptionUtils.getCauseOfTypes(e, Collections.singletonList(IllegalArgumentException.class)));
+  }
+  
+  @Test
+  public void getCauseOfTypesTest() {
+    IllegalArgumentException expected = new IllegalArgumentException(new Exception());
+    Exception e = new Exception(expected);
+    assertTrue(expected == ExceptionUtils.getCauseOfTypes(e, IllegalArgumentException.class));
   }
   
   @Test
@@ -404,9 +411,15 @@ public class ExceptionUtilsTest {
   }
   
   @Test
-  public void hasCauseOfTypesTest() {
+  public void hasCauseOfTypesListTest() {
     Exception e = new Exception(new IllegalArgumentException(new Exception()));
     assertTrue(ExceptionUtils.hasCauseOfTypes(e, Collections.singletonList(IllegalArgumentException.class)));
+  }
+  
+  @Test
+  public void hasCauseOfTypesTest() {
+    Exception e = new Exception(new IllegalArgumentException(new Exception()));
+    assertTrue(ExceptionUtils.hasCauseOfTypes(e, IllegalArgumentException.class));
   }
   
   @Test

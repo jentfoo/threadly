@@ -3,6 +3,7 @@ package org.threadly.util;
 import java.io.PrintWriter;
 import java.io.Writer;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.util.Arrays;
 
 /**
  * Utilities for doing basic operations with exceptions.
@@ -230,6 +231,23 @@ public class ExceptionUtils {
    * Checks to see if the provided error, or any causes in the provided error matching the 
    * provided type.  This can be useful when trying to truncate an exception chain to only the 
    * relevant information.  If the goal is only to determine if it exists or not consider using 
+   * {@link #hasCauseOfTypes(Throwable, Class...)}.  If you are only comparing against one exception 
+   * type {@link #getCauseOfType(Throwable, Class)} is a better option (and will return without the 
+   * need to cast, type thanks to generics).
+   * 
+   * @param rootError Throwable to start search from
+   * @param types Types of throwable classes looking to match against
+   * @return Throwable that matches one of the provided types, or {@code null} if none was found
+   */
+  @SafeVarargs
+  public static Throwable getCauseOfTypes(Throwable rootError, Class<? extends Throwable> ... types) {
+    return getCauseOfTypes(rootError, Arrays.asList(types));
+  }
+
+  /**
+   * Checks to see if the provided error, or any causes in the provided error matching the 
+   * provided type.  This can be useful when trying to truncate an exception chain to only the 
+   * relevant information.  If the goal is only to determine if it exists or not consider using 
    * {@link #hasCauseOfTypes(Throwable, Iterable)}.  If you are only comparing against one exception 
    * type {@link #getCauseOfType(Throwable, Class)} is a better option (and will return without the 
    * need to cast, type thanks to generics).
@@ -252,6 +270,23 @@ public class ExceptionUtils {
       t = t.getCause();
     }
     return null;
+  }
+  
+  /**
+   * Checks to see if the provided error, or any causes in the provided error match the provided 
+   * type.  This can be useful when trying to detect conditions where the actual condition may not 
+   * be the head cause, nor the root cause (but buried somewhere in the chain).  If the actual 
+   * exception is needed consider using {@link #getCauseOfTypes(Throwable, Iterable)}.  If you are 
+   * only comparing against one exception type {@link #hasCauseOfType(Throwable, Class)} is a 
+   * better option.
+   * 
+   * @param rootError Throwable to start search from
+   * @param types Types of throwable classes looking to match against
+   * @return {@code true} if a match was found, false if no exception cause matches any provided types
+   */
+  @SafeVarargs
+  public static boolean hasCauseOfTypes(Throwable rootError, Class<? extends Throwable> ... types) {
+    return getCauseOfTypes(rootError, types) != null;
   }
   
   /**
