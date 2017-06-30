@@ -714,9 +714,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
             if (queued) { // we can only park after we have queued, then checked again for a result
-              worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
               LockSupport.park();
-              worker.waitingForUnpark = false;
               continue;
             } else {
               addWorkerToIdleChain(worker);
@@ -751,16 +749,12 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
                 if (nextTask.getPureRunTime() < workerTimedParkRunTime) {
                   // we can only park after we have queued, then checked again for a result
                   workerTimedParkRunTime = nextTask.getPureRunTime();
-                  worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
                   LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * taskDelay);
-                  worker.waitingForUnpark = false;
                   workerTimedParkRunTime = Long.MAX_VALUE;
                   continue;
                 } else {
                   // there is another worker already doing a timed park, so we can wait till woken up
-                  worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
                   LockSupport.park();
-                  worker.waitingForUnpark = false;
                   continue;
                 }
               } else {
@@ -813,10 +807,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
             break;
           }
         } else {
-          if (! nextIdleWorker.waitingForUnpark) {
-            nextIdleWorker.waitingForUnpark = true;
-            LockSupport.unpark(nextIdleWorker.thread);
-          }
+          LockSupport.unpark(nextIdleWorker.thread);
           break;
         }
       }
@@ -832,7 +823,6 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     protected final WorkerPool workerPool;
     protected final Thread thread;
     protected volatile Worker nextIdleWorker;
-    protected volatile boolean waitingForUnpark;
     
     protected Worker(WorkerPool workerPool, ThreadFactory threadFactory) {
       this.workerPool = workerPool;
@@ -841,7 +831,6 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         throw new IllegalThreadStateException();
       }
       nextIdleWorker = null;
-      waitingForUnpark = false;
     }
 
     @Override
