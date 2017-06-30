@@ -713,8 +713,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         while (true) {
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
-            if (queued) {
-              // we can only park after we have queued, then checked again for a result
+            if (queued) { // we can only park after we have queued, then checked again for a result
+              worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
               LockSupport.park();
               worker.waitingForUnpark = false;
               continue;
@@ -751,12 +751,14 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
                 if (nextTask.getPureRunTime() < workerTimedParkRunTime) {
                   // we can only park after we have queued, then checked again for a result
                   workerTimedParkRunTime = nextTask.getPureRunTime();
+                  worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
                   LockSupport.parkNanos(Clock.NANOS_IN_MILLISECOND * taskDelay);
                   worker.waitingForUnpark = false;
                   workerTimedParkRunTime = Long.MAX_VALUE;
                   continue;
                 } else {
                   // there is another worker already doing a timed park, so we can wait till woken up
+                  worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
                   LockSupport.park();
                   worker.waitingForUnpark = false;
                   continue;
