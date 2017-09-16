@@ -713,7 +713,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       boolean queued = false;
       try {
         while (true) {
-          TaskWrapper nextTask = queueManager.getNextTask(queued | workerTimedParkRunTime == Long.MAX_VALUE);
+          TaskWrapper nextTask = queueManager.getNextTask(true, queued | workerTimedParkRunTime == Long.MAX_VALUE);
           if (nextTask == null) {
             if (queued) { // we can only park after we have queued, then checked again for a result
               LockSupport.park();

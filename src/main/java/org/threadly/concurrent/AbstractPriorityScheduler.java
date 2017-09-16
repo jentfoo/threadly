@@ -409,16 +409,31 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * <p>
      * The task returned from this may not be ready to executed, but at the time of calling it 
      * will be the next one to execute.
+     * <p>
+     * If {@code canRemove} is {@code true} then it is critical that the returned task is executed.
+     * Besides the requirement of execution it can follow an otherwise normal code flow path.
      * 
+     * @param canRemove If {@code true} then this function has permission to remove ready to execute tasks immediately
      * @param checkScheduleQueue {@code true} to check both the execute and scheduled queue
      * @return TaskWrapper which will be executed next, or {@code null} if there are no tasks
      */
-    public TaskWrapper getNextTask(boolean checkScheduleQueue) {
-      if (! checkScheduleQueue) {
-        return executeQueue.peek();
+    public TaskWrapper getNextTask(boolean canRemove, boolean checkScheduleQueue) {
+      TaskWrapper scheduledTask = null;
+      if (! checkScheduleQueue || (scheduledTask = scheduleQueue.peekFirst()) == null || 
+          scheduledTask.getPureRunTime() > Clock.lastKnownForwardProgressingMillis()) {  // TODO - clock not updating?
+        if (canRemove) {
+          OneTimeTaskWrapper result = executeQueue.poll();
+          if (result != null) {
+            result.removedFromQueue();
+            return result;
+          } else {
+            return scheduledTask;
+          }
+        } else {
+          return executeQueue.peek();
+        }
       }
       
-      TaskWrapper scheduledTask = scheduleQueue.peekFirst();
       TaskWrapper executeTask = executeQueue.peek();
       if (executeTask != null) {
         if (scheduledTask != null && scheduledTask.getRunTime() < executeTask.getRunTime()) {
@@ -495,15 +510,21 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * just queued.  If a queue update comes in, this must be re-invoked to see what task is now 
      * next.  If there are no tasks ready to be executed this will simply return {@code null}.
      * 
+     * @param canRemove If {@code true} then this function has permission to remove ready to execute tasks immediately
      * @param checkScheduleQueue {@code true} to check both the execute and scheduled queue
      * @return Task to be executed next, or {@code null} if no tasks at all are queued
      */
-    public TaskWrapper getNextTask(boolean checkScheduleQueue) {
+    public TaskWrapper getNextTask(boolean canRemove, boolean checkScheduleQueue) {
       // First compare between high and low priority task queues
       // then depending on that state, we may check starvable
       TaskWrapper nextTask;
-      TaskWrapper nextHighPriorityTask = highPriorityQueueSet.getNextTask(checkScheduleQueue);
-      TaskWrapper nextLowPriorityTask = lowPriorityQueueSet.getNextTask(checkScheduleQueue);
+      TaskWrapper nextLowPriorityTask = lowPriorityQueueSet.getNextTask(false, checkScheduleQueue);
+      TaskWrapper nextHighPriorityTask = 
+          highPriorityQueueSet.getNextTask(canRemove && 
+                                             (nextLowPriorityTask == null || 
+                                               // TODO - clock not updating?
+                                               Clock.lastKnownForwardProgressingMillis() < nextLowPriorityTask.getPureRunTime()),   
+                                           checkScheduleQueue);
       if (nextLowPriorityTask == null) {
         nextTask = nextHighPriorityTask;
       } else if (nextHighPriorityTask == null) {
@@ -533,12 +554,12 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       }
       
       if (nextTask == null) {
-        return starvablePriorityQueueSet.getNextTask(checkScheduleQueue);
+        return starvablePriorityQueueSet.getNextTask(canRemove, checkScheduleQueue);
       } else {
         // TODO - does it make sense to reduce the logic in the below conditionals
         long nextTaskDelay = nextTask.getScheduleDelay();
         if (nextTaskDelay > 0) {
-          TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask(checkScheduleQueue);
+          TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask(false, checkScheduleQueue);
           if (nextStarvableTask != null && nextTaskDelay > nextStarvableTask.getScheduleDelay()) {
             return nextStarvableTask;
           } else {
@@ -709,6 +730,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   protected static class OneTimeTaskWrapper extends TaskWrapper {
     protected final Queue<? extends TaskWrapper> taskQueue;
     protected final long runTime;
+    private volatile boolean removedFromQueue;
     // optimization to avoid queue traversal on failure to remove, cheaper than AtomicBoolean
     private volatile boolean executed;
     
@@ -717,6 +739,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       
       this.taskQueue = taskQueue;
       this.runTime = runTime;
+      this.removedFromQueue = false;
       this.executed = false;
     }
     
@@ -739,18 +762,22 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
     
     @Override
     public short getExecuteReference() {
-      // we ignore the reference since one time tasks are deterministically removed from the queue
-      return 0;
+      return (short)(removedFromQueue ? 1 : 0);
+    }
+    
+    public void removedFromQueue() {
+      executed = true;
+      removedFromQueue = true;
     }
 
     @Override
-    public boolean canExecute(short ignoredExecuteReference) {
+    public boolean canExecute(short executeReference) {
       if (! executed && 
           (executed = true) & // set executed as soon as possible, before removal attempt
           taskQueue.remove(this)) { // every task is wrapped in a unique wrapper, so we can remove 'this' safely
         return true;
       } else {
-        return false;
+        return removedFromQueue & executeReference == 1;
       }
     }
   }
