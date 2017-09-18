@@ -6,8 +6,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.function.Function;
 
 import org.threadly.concurrent.collections.ConcurrentArrayList;
@@ -248,13 +248,13 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    */
   protected static class QueueSet {
     protected final QueueSetListener queueListener;
-    protected final ConcurrentLinkedQueue<OneTimeTaskWrapper> executeQueue;
+    protected final LinkedTransferQueue<OneTimeTaskWrapper> executeQueue;
     protected final ConcurrentArrayList<TaskWrapper> scheduleQueue;
     protected final Function<Integer, Long> scheduleQueueRunTimeByIndex;
     
     public QueueSet(QueueSetListener queueListener) {
       this.queueListener = queueListener;
-      this.executeQueue = new ConcurrentLinkedQueue<>();
+      this.executeQueue = new LinkedTransferQueue<>();
       this.scheduleQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
       scheduleQueueRunTimeByIndex = (index) -> scheduleQueue.get(index).getRunTime();
     }
