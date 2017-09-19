@@ -1,6 +1,7 @@
 package org.threadly.concurrent.collections;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -80,7 +81,8 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public Iterator<T> iterator() {
-    throw new UnsupportedOperationException();
+    // TODO
+    return Collections.emptyIterator();
   }
 
   @Override
