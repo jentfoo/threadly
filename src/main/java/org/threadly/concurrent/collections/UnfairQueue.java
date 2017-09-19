@@ -1,97 +1,47 @@
 package org.threadly.concurrent.collections;
 
-import java.lang.ref.WeakReference;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import org.threadly.util.Clock;
+
 public class UnfairQueue<T> implements Collection<T> {
-  protected ThreadLocal<ThreadLocalQueue> threadLocalQueue;
-  protected Queue<Queue<T>> deadQueues;
-  protected Collection<WeakReference<ThreadLocalQueue>> allQueues;
+  protected Queue<T>[] queues;
   
   public UnfairQueue() {
-    deadQueues = new ConcurrentLinkedQueue<>();
-    allQueues = new ConcurrentLinkedQueue<>();
+    queues = new Queue[16];
+    for (int i = 0; i < queues.length; i++) {
+      queues[i] = new ConcurrentLinkedQueue<>();
+    }
   }
   
   public T poll() {
     T result = null;
-    if (threadLocalQueue.get() != null) {
-      result = threadLocalQueue.get().queue.poll();
-    }
-    if (result == null) {
-      Iterator<Queue<T>> it = deadQueues.iterator();
-      while (it.hasNext()) {
-        result = it.next().poll();
-        if (result == null) {
-          it.remove();
-        } else {
-          break;
-        }
+    for (Queue<T> q : queues) {
+      result = q.poll();
+      if (result != null) {
+        return result;
       }
     }
-    if (result == null) {
-      Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-      while (it.hasNext()) {
-        WeakReference<ThreadLocalQueue> wr = it.next();
-        ThreadLocalQueue tlq = wr.get();
-        if (tlq == null) {
-          it.remove();
-        } else {
-          result = tlq.queue.poll();
-          if (result != null) {
-            break;
-          }
-        }
-      }
-    }
-    return result;
+    return null;
   }
 
   public T peek() {
     T result = null;
-    if (threadLocalQueue.get() != null) {
-      result = threadLocalQueue.get().queue.peek();
-    }
-    if (result == null) {
-      Iterator<Queue<T>> it = deadQueues.iterator();
-      while (it.hasNext()) {
-        result = it.next().poll();
-        if (result == null) {
-          it.remove();
-        } else {
-          break;
-        }
+    for (Queue<T> q : queues) {
+      result = q.peek();
+      if (result != null) {
+        return result;
       }
     }
-    if (result == null) {
-      Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-      while (it.hasNext()) {
-        WeakReference<ThreadLocalQueue> wr = it.next();
-        ThreadLocalQueue tlq = wr.get();
-        if (tlq == null) {
-          it.remove();
-        } else {
-          result = tlq.queue.peek();
-          if (result != null) {
-            break;
-          }
-        }
-      }
-    }
-    return result;
+    return null;
   }
   
   @Override
   public boolean add(T item) {
-    ThreadLocalQueue tlq = threadLocalQueue.get();
-    if (tlq == null) {
-      threadLocalQueue.set(tlq = new ThreadLocalQueue());
-      allQueues.add(new WeakReference<>(tlq));
-    }
-    tlq.queue.add(item);
+    queues[(int)((item.hashCode() ^ Clock.lastKnownTimeMillis()) % queues.length)].add(item);
     return true;
   }
 
@@ -105,13 +55,8 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public boolean remove(Object o) {
-    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-    while (it.hasNext()) {
-      WeakReference<ThreadLocalQueue> wr = it.next();
-      ThreadLocalQueue tlq = wr.get();
-      if (tlq == null) {
-        it.remove();
-      } else if (tlq.queue.remove(o)) {
+    for (Queue<T> q : queues) {
+      if (q.remove(o)) {
         return true;
       }
     }
@@ -120,15 +65,8 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public void clear() {
-    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-    while (it.hasNext()) {
-      WeakReference<ThreadLocalQueue> wr = it.next();
-      ThreadLocalQueue tlq = wr.get();
-      if (tlq == null) {
-        it.remove();
-      } else {
-        tlq.queue.clear();
-      }
+    for (Queue<T> q : queues) {
+      q.clear();
     }
   }
 
@@ -144,13 +82,8 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public boolean contains(Object o) {
-    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-    while (it.hasNext()) {
-      WeakReference<ThreadLocalQueue> wr = it.next();
-      ThreadLocalQueue tlq = wr.get();
-      if (tlq == null) {
-        it.remove();
-      } else if (tlq.queue.contains(o)) {
+    for (Queue<T> q : queues) {
+      if (q.contains(o)) {
         return true;
       }
     }
@@ -169,13 +102,8 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public boolean isEmpty() {
-    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
-    while (it.hasNext()) {
-      WeakReference<ThreadLocalQueue> wr = it.next();
-      ThreadLocalQueue tlq = wr.get();
-      if (tlq == null) {
-        it.remove();
-      } else if (! tlq.queue.isEmpty()) {
+    for (Queue<T> q : queues) {
+      if (! q.isEmpty()) {
         return false;
       }
     }
@@ -204,15 +132,5 @@ public class UnfairQueue<T> implements Collection<T> {
   @Override
   public <T> T[] toArray(T[] a) {
     throw new UnsupportedOperationException();
-  }
-  
-  protected class ThreadLocalQueue {
-    private final Queue<T> queue = new ConcurrentLinkedQueue<>();
-    
-    @Override
-    protected void finalize() throws Throwable {
-      deadQueues.add(queue);
-      super.finalize();
-    }
   }
 }
