@@ -413,12 +413,11 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * Besides the requirement of execution it can follow an otherwise normal code flow path.
      * 
      * @param canRemove If {@code true} then this function has permission to remove ready to execute tasks immediately
-     * @param checkScheduleQueue {@code true} to check both the execute and scheduled queue
      * @return TaskWrapper which will be executed next, or {@code null} if there are no tasks
      */
-    public TaskWrapper getNextTask(boolean canRemove, boolean checkScheduleQueue) {
+    public TaskWrapper getNextTask(boolean canRemove) {
       TaskWrapper scheduledTask = null;
-      if (! checkScheduleQueue || (scheduledTask = scheduleQueue.peekFirst()) == null || 
+      if ((scheduledTask = scheduleQueue.peekFirst()) == null || 
           scheduledTask.getPureRunTime() > Clock.lastKnownForwardProgressingMillis()) {  // TODO - clock not updating?
         if (canRemove) {
           OneTimeTaskWrapper result = executeQueue.poll();
@@ -513,17 +512,16 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * @param checkScheduleQueue {@code true} to check both the execute and scheduled queue
      * @return Task to be executed next, or {@code null} if no tasks at all are queued
      */
-    public TaskWrapper getNextTask(boolean canRemove, boolean checkScheduleQueue) {
+    public TaskWrapper getNextTask(boolean canRemove) {
       // First compare between high and low priority task queues
       // then depending on that state, we may check starvable
       TaskWrapper nextTask;
-      TaskWrapper nextLowPriorityTask = lowPriorityQueueSet.getNextTask(false, checkScheduleQueue);
+      TaskWrapper nextLowPriorityTask = lowPriorityQueueSet.getNextTask(false);
       TaskWrapper nextHighPriorityTask = 
           highPriorityQueueSet.getNextTask(canRemove && 
                                              (nextLowPriorityTask == null || 
                                                // TODO - clock not updating?
-                                               Clock.lastKnownForwardProgressingMillis() < nextLowPriorityTask.getPureRunTime()),   
-                                           checkScheduleQueue);
+                                               Clock.lastKnownForwardProgressingMillis() < nextLowPriorityTask.getPureRunTime()));
       if (nextLowPriorityTask == null) {
         nextTask = nextHighPriorityTask;
       } else if (nextHighPriorityTask == null) {
@@ -553,12 +551,12 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       }
       
       if (nextTask == null) {
-        return starvablePriorityQueueSet.getNextTask(canRemove, checkScheduleQueue);
+        return starvablePriorityQueueSet.getNextTask(canRemove);
       } else {
         // TODO - does it make sense to reduce the logic in the below conditionals
         long nextTaskDelay = nextTask.getScheduleDelay();
         if (nextTaskDelay > 0) {
-          TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask(false, checkScheduleQueue);
+          TaskWrapper nextStarvableTask = starvablePriorityQueueSet.getNextTask(false);
           if (nextStarvableTask != null && nextTaskDelay > nextStarvableTask.getScheduleDelay()) {
             return nextStarvableTask;
           } else {
