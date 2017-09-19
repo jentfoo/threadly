@@ -8,12 +8,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class UnfairQueue<T> implements Collection<T> {
   protected ThreadLocal<ThreadLocalQueue> threadLocalQueue;
-  protected Collection<WeakReference<ThreadLocalQueue>> allQueues;
   protected Queue<Queue<T>> deadQueues;
+  protected Collection<WeakReference<ThreadLocalQueue>> allQueues;
   
   public UnfairQueue() {
-    allQueues = new ConcurrentLinkedQueue<>();
     deadQueues = new ConcurrentLinkedQueue<>();
+    allQueues = new ConcurrentLinkedQueue<>();
   }
   
   public T poll() {
@@ -89,23 +89,46 @@ public class UnfairQueue<T> implements Collection<T> {
     ThreadLocalQueue tlq = threadLocalQueue.get();
     if (tlq == null) {
       threadLocalQueue.set(tlq = new ThreadLocalQueue());
+      allQueues.add(new WeakReference<>(tlq));
     }
     tlq.queue.add(item);
     return true;
   }
-  
-  protected class ThreadLocalQueue {
-    private final Queue<T> queue;
-    
-    public ThreadLocalQueue() {
-      queue = new ConcurrentLinkedQueue<>();
-      allQueues.add(new WeakReference<>(this));
+
+  @Override
+  public boolean addAll(Collection<? extends T> c) {
+    for (T item : c) {
+      add(item);
     }
-    
-    @Override
-    protected void finalize() throws Throwable {
-      deadQueues.add(queue);
-      super.finalize();
+    return true;
+  }
+
+  @Override
+  public boolean remove(Object o) {
+    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
+    while (it.hasNext()) {
+      WeakReference<ThreadLocalQueue> wr = it.next();
+      ThreadLocalQueue tlq = wr.get();
+      if (tlq == null) {
+        it.remove();
+      } else if (tlq.queue.remove(o)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @Override
+  public void clear() {
+    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
+    while (it.hasNext()) {
+      WeakReference<ThreadLocalQueue> wr = it.next();
+      ThreadLocalQueue tlq = wr.get();
+      if (tlq == null) {
+        it.remove();
+      } else {
+        tlq.queue.clear();
+      }
     }
   }
 
@@ -120,41 +143,52 @@ public class UnfairQueue<T> implements Collection<T> {
   }
 
   @Override
-  public boolean remove(Object item) {
-    throw new UnsupportedOperationException();
+  public boolean contains(Object o) {
+    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
+    while (it.hasNext()) {
+      WeakReference<ThreadLocalQueue> wr = it.next();
+      ThreadLocalQueue tlq = wr.get();
+      if (tlq == null) {
+        it.remove();
+      } else if (tlq.queue.contains(o)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override
-  public boolean addAll(Collection<? extends T> c) {
-    for (T item : c) {
-      add(item);
+  public boolean containsAll(Collection<?> c) {
+    for (Object o : c) {
+      if (! contains(o)) {
+        return false;
+      }
     }
     return true;
   }
 
   @Override
-  public void clear() {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public boolean contains(Object o) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public boolean containsAll(Collection<?> c) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
   public boolean isEmpty() {
-    throw new UnsupportedOperationException();
+    Iterator<WeakReference<ThreadLocalQueue>> it = allQueues.iterator();
+    while (it.hasNext()) {
+      WeakReference<ThreadLocalQueue> wr = it.next();
+      ThreadLocalQueue tlq = wr.get();
+      if (tlq == null) {
+        it.remove();
+      } else if (! tlq.queue.isEmpty()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override
   public boolean removeAll(Collection<?> c) {
-    throw new UnsupportedOperationException();
+    boolean result = false;
+    for (Object o : c) {
+      result |= remove(o);
+    }
+    return result;
   }
 
   @Override
@@ -170,5 +204,15 @@ public class UnfairQueue<T> implements Collection<T> {
   @Override
   public <T> T[] toArray(T[] a) {
     throw new UnsupportedOperationException();
+  }
+  
+  protected class ThreadLocalQueue {
+    private final Queue<T> queue = new ConcurrentLinkedQueue<>();
+    
+    @Override
+    protected void finalize() throws Throwable {
+      deadQueues.add(queue);
+      super.finalize();
+    }
   }
 }
