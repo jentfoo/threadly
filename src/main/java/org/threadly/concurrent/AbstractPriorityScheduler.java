@@ -4,13 +4,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 
 import org.threadly.concurrent.collections.ConcurrentArrayList;
+import org.threadly.concurrent.collections.UnfairQueue;
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.future.ListenableFutureTask;
 import org.threadly.concurrent.future.ListenableRunnableFuture;
@@ -248,13 +247,13 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    */
   protected static class QueueSet {
     protected final QueueSetListener queueListener;
-    protected final ConcurrentLinkedQueue<OneTimeTaskWrapper> executeQueue;
+    protected final UnfairQueue<OneTimeTaskWrapper> executeQueue;
     protected final ConcurrentArrayList<TaskWrapper> scheduleQueue;
     protected final Function<Integer, Long> scheduleQueueRunTimeByIndex;
     
     public QueueSet(QueueSetListener queueListener) {
       this.queueListener = queueListener;
-      this.executeQueue = new ConcurrentLinkedQueue<>();
+      this.executeQueue = new UnfairQueue<>();
       this.scheduleQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
       scheduleQueueRunTimeByIndex = (index) -> scheduleQueue.get(index).getRunTime();
     }
@@ -728,13 +727,13 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    * @since 1.0.0
    */
   protected static class OneTimeTaskWrapper extends TaskWrapper {
-    protected final Queue<? extends TaskWrapper> taskQueue;
+    protected final Collection<? extends TaskWrapper> taskQueue;
     protected final long runTime;
     private volatile boolean removedFromQueue;
     // optimization to avoid queue traversal on failure to remove, cheaper than AtomicBoolean
     private volatile boolean executed;
     
-    protected OneTimeTaskWrapper(Runnable task, Queue<? extends TaskWrapper> taskQueue, long runTime) {
+    protected OneTimeTaskWrapper(Runnable task, Collection<? extends TaskWrapper> taskQueue, long runTime) {
       super(task);
       
       this.taskQueue = taskQueue;

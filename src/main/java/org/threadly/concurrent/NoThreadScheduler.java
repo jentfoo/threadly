@@ -1,7 +1,7 @@
 package org.threadly.concurrent;
 
+import java.util.Collection;
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
@@ -408,7 +408,7 @@ public class NoThreadScheduler extends AbstractPriorityScheduler {
    */
   protected class NoThreadOneTimeTaskWrapper extends OneTimeTaskWrapper {
     protected NoThreadOneTimeTaskWrapper(Runnable task, 
-                                         Queue<? extends TaskWrapper> taskQueue, long runTime) {
+                                         Collection<? extends TaskWrapper> taskQueue, long runTime) {
       super(task, taskQueue, runTime);
     }
     
