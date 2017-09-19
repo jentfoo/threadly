@@ -5,11 +5,10 @@ import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import org.threadly.util.Clock;
-
 public class UnfairQueue<T> implements Collection<T> {
   protected Queue<T>[] queues;
   
+  @SuppressWarnings({"unchecked", "rawtypes"})
   public UnfairQueue() {
     queues = new Queue[16];
     for (int i = 0; i < queues.length; i++) {
@@ -41,7 +40,7 @@ public class UnfairQueue<T> implements Collection<T> {
   
   @Override
   public boolean add(T item) {
-    queues[(int)((item.hashCode() ^ Clock.lastKnownTimeMillis()) % queues.length)].add(item);
+    queues[(int)(Thread.currentThread().getId() % queues.length)].add(item);
     return true;
   }
 
