@@ -71,7 +71,11 @@ public class UnfairQueue<T> implements Collection<T> {
 
   @Override
   public int size() {
-    throw new UnsupportedOperationException();
+    int result = 0;
+    for (Queue<T> q : queues) {
+      result += q.size();
+    }
+    return result;
   }
 
   @Override
