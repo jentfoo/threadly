@@ -186,7 +186,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   public int getWaitingForExecutionTaskCount() {
     int result = 0;
     for (TaskPriority p : TaskPriority.values()) {
-      result += getWaitingForExecutionTaskCount(p);
+      result += getQueueManager().getQueueSet(p).getWaitingForExecutionTaskCount();
     }
     return result;
   }
@@ -197,20 +197,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       return getWaitingForExecutionTaskCount();
     }
     
-    QueueSet qs = getQueueManager().getQueueSet(priority);
-    int result = qs.executeQueue.size();
-    for (int i = 0; i < qs.scheduleQueue.size(); i++) {
-      try {
-        if (qs.scheduleQueue.get(i).getScheduleDelay() > 0) {
-          break;
-        } else {
-          result++;
-        }
-      } catch (IndexOutOfBoundsException e) {
-        break;
-      }
-    }
-    return result;
+    return getQueueManager().getQueueSet(priority).getWaitingForExecutionTaskCount();
   }
   
   /**
@@ -358,6 +345,53 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       return executeQueue.size() + scheduleQueue.size();
     }
 
+
+    /**
+     * Returns a count of how many tasks are either waiting to be executed.
+     * 
+     * @return quantity of tasks waiting execution
+     */
+    public int getWaitingForExecutionTaskCount() {
+      int result = executeQueue.size();
+      for (int i = 0; i < scheduleQueue.size(); i++) {
+        try {
+          if (scheduleQueue.get(i).getScheduleDelay() > 0) {
+            break;
+          } else {
+            result++;
+          }
+        } catch (IndexOutOfBoundsException e) {
+          // concurrent modification
+          break;
+        }
+      }
+      return result;
+    }
+    
+    /**
+     * Check if this queue set has any tasks currently waiting to execute.
+     * 
+     * @return {@code true} If this queue has tasks ready to execute
+     */
+    public boolean hasTasksReadyToExecute() {
+      if (! executeQueue.isEmpty()) {
+        return true;
+      }
+      while (true) {
+        TaskWrapper tw = scheduleQueue.peek();
+        if (tw == null) {
+          return false;
+        }
+        long delay = tw.getScheduleDelay();
+        if (delay == Long.MAX_VALUE) {
+          // task suddenly started to execute
+          continue;
+        } else {
+          return delay <= 0;
+        }
+      }
+    }
+
     public void drainQueueInto(List<TaskWrapper> removedTasks) {
       clearQueue(executeQueue, removedTasks);
       synchronized (scheduleQueue.getModificationLock()) {
@@ -472,6 +506,18 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       starvablePriorityQueueSet.drainQueueInto(wrapperList);
       
       return ContainerHelper.getContainedRunnables(wrapperList);
+    }
+
+    /**
+     * Check if there are any tasks in any contained queue sets that are currently ready to 
+     * execute.
+     * 
+     * @return {@code true} If none of the queue sets contain any elements
+     */
+    public boolean hasTasksReadyToExecute() {
+      return highPriorityQueueSet.hasTasksReadyToExecute() || 
+               lowPriorityQueueSet.hasTasksReadyToExecute() || 
+               starvablePriorityQueueSet.hasTasksReadyToExecute();
     }
     
     /**
