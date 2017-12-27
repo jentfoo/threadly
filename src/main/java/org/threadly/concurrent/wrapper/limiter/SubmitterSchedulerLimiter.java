@@ -132,7 +132,7 @@ public class SubmitterSchedulerLimiter extends ExecutorLimiter implements Submit
    * @since 1.1.0
    */
   protected class DelayedExecutionRunnable implements RunnableRunnableContainer {
-    private final LimiterRunnableWrapper lrw;
+    protected final LimiterRunnableWrapper lrw;
 
     protected DelayedExecutionRunnable(Runnable runnable) {
       this(new LimiterRunnableWrapper(runnable));
