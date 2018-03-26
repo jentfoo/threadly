@@ -1,5 +1,6 @@
 package org.threadly.test.concurrent;
 
+import org.threadly.concurrent.UncheckedInterruptedException;
 import org.threadly.util.Clock;
 
 /**
@@ -18,7 +19,7 @@ public class TestUtils {
       Thread.sleep(time);
     } catch (InterruptedException e) {
       // reset interrupted status
-      Thread.currentThread().interrupt();
+      throw new UncheckedInterruptedException(e);
     }
   }
   

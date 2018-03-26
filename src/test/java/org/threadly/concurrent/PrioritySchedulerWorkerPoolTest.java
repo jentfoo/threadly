@@ -98,13 +98,13 @@ public class PrioritySchedulerWorkerPoolTest {
     w.start();
 
     // wait for worker to become idle
-    new TestCondition(() -> workerPool.idleWorker.get() == w).blockTillTrue();
+    new TestCondition(() -> workerPool.idleWorkers[w.threadlyGroup].get() == w).blockTillTrue();
     
     workerPool.startShutdown();
     workerPool.finishShutdown();
     
     // verify idle worker is gone
-    new TestCondition(() -> workerPool.idleWorker.get() == null).blockTillTrue();
+    new TestCondition(() -> workerPool.idleWorkers[w.threadlyGroup].get() == null).blockTillTrue();
     
     // should return immediately now that we are shut down
     workerPool.workerIdle(new Worker(workerPool, workerPool.threadFactory));

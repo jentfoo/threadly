@@ -39,6 +39,7 @@ import org.threadly.util.Clock;
  */
 public class PriorityScheduler extends AbstractPriorityScheduler {
   protected static final boolean DEFAULT_NEW_THREADS_DAEMON = true;
+  private static final short GROUP_COUNT = 2; // used to reduce contention
   
   protected final WorkerPool workerPool;
   protected final QueueManager taskQueueManager;
@@ -381,9 +382,9 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
   protected static class WorkerPool implements QueueSetListener {
     protected final ThreadFactory threadFactory;
     protected final Object poolSizeChangeLock;
-    protected final Object idleWorkerDequeLock;
+    protected final Object[] idleWorkerDequeLocks;
+    protected final AtomicReference<Worker>[] idleWorkers;
     protected final LongAdder idleWorkerCount;
-    protected final AtomicReference<Worker> idleWorker;
     protected final AtomicInteger currentPoolSize;
     protected final Object workerStopNotifyLock;
     private final AtomicBoolean shutdownStarted;
@@ -392,6 +393,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     private volatile long workerTimedParkRunTime;
     private QueueManager queueManager;  // set before any threads started
     
+    @SuppressWarnings({"unchecked", "rawtypes"})
     protected WorkerPool(ThreadFactory threadFactory, int poolSize) {
       ArgumentVerifier.assertGreaterThanZero(poolSize, "poolSize");
       if (threadFactory == null) {
@@ -399,9 +401,13 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       }
       
       poolSizeChangeLock = new Object();
-      idleWorkerDequeLock = new Object();
+      idleWorkerDequeLocks = new Object[GROUP_COUNT];
+      idleWorkers = new AtomicReference[GROUP_COUNT];
+      for (int i = 0; i < GROUP_COUNT; i++) {
+        idleWorkerDequeLocks[i] = new Object();
+        idleWorkers[i] = new AtomicReference<>(null);
+      }
       idleWorkerCount = new LongAdder();
-      idleWorker = new AtomicReference<>(null);
       currentPoolSize = new AtomicInteger(0);
       workerStopNotifyLock = new Object();
       
@@ -669,10 +675,10 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       worker.waitingForUnpark = false;  // reset state before we park, avoid external interactions
       
       while (true) {
-        Worker casWorker = idleWorker.get();
+        Worker casWorker = idleWorkers[worker.threadlyGroup].get();
         // we can freely set this value until we get into the idle linked queue
         worker.nextIdleWorker = casWorker;
-        if (idleWorker.compareAndSet(casWorker, worker)) {
+        if (idleWorkers[worker.threadlyGroup].compareAndSet(casWorker, worker)) {
           break;
         }
       }
@@ -692,17 +698,17 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
        * outside of the workers thread.  If we don't synchronize here, we may end up 
        * having workers disappear from the chain when the reference is nulled out.
        */
-      synchronized (idleWorkerDequeLock) {
-        Worker holdingWorker = idleWorker.get();
+      synchronized (idleWorkerDequeLocks[worker.threadlyGroup]) {
+        Worker holdingWorker = idleWorkers[worker.threadlyGroup].get();
         if (holdingWorker == worker) {
-          if (idleWorker.compareAndSet(worker, worker.nextIdleWorker)) {
+          if (idleWorkers[worker.threadlyGroup].compareAndSet(worker, worker.nextIdleWorker)) {
             return;
           } else {
             /* because we can only queue in parallel, we know that the conflict was a newly queued 
              * worker.  In addition since we know that queued workers are added at the start, all 
              * that should be necessary is updating our holding worker reference
              */
-            holdingWorker = idleWorker.get();
+            holdingWorker = idleWorkers[worker.threadlyGroup].get();
           }
         }
         
@@ -832,7 +838,13 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     @Override
     public void handleQueueUpdate() {
       while (true) {
-        Worker nextIdleWorker = idleWorker.get();
+        Worker nextIdleWorker = null;
+        for (AtomicReference<Worker> ar : idleWorkers) {
+          nextIdleWorker = ar.get();
+          if (nextIdleWorker != null) {
+            break;
+          }
+        }
         if (nextIdleWorker == null) {
           int casSize = currentPoolSize.get();
           if (casSize < maxPoolSize & ! shutdownFinishing) {
@@ -864,6 +876,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
   protected static class Worker extends AbstractService implements Runnable {
     protected final WorkerPool workerPool;
     protected final Thread thread;
+    protected final short threadlyGroup;
     protected volatile Worker nextIdleWorker;
     protected volatile boolean waitingForUnpark;
     
@@ -873,6 +886,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       if (thread.isAlive()) {
         throw new IllegalThreadStateException();
       }
+      threadlyGroup = (short)(thread.getId() % GROUP_COUNT);
       nextIdleWorker = null;
       waitingForUnpark = false;
     }

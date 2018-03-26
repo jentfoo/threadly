@@ -8,10 +8,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Test;
 import org.threadly.BlockingTestRunnable;
 import org.threadly.concurrent.AbstractPriorityScheduler.OneTimeTaskWrapper;
+import org.threadly.concurrent.PriorityScheduler.Worker;
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.concurrent.wrapper.priority.DefaultPriorityWrapper;
 import org.threadly.test.concurrent.AsyncVerifier;
@@ -183,7 +185,17 @@ public class PrioritySchedulerTest extends AbstractPrioritySchedulerTest {
       interruptSentAV.waitForTest(); // verify thread was interrupted as expected
       
       // verify worker was returned to pool
-      new TestCondition(() -> scheduler.workerPool.idleWorker.get() != null).blockTillTrue();
+      new TestCondition() {
+        @Override
+        public boolean get() {
+          for (AtomicReference<?> ar : scheduler.workerPool.idleWorkers) {
+            if (ar.get() != null) {
+              return true;
+            }
+          }
+          return false;
+        }
+      }.blockTillTrue();
       // verify pool size is still correct
       assertEquals(1, scheduler.getCurrentPoolSize());
       
@@ -485,13 +497,37 @@ public class PrioritySchedulerTest extends AbstractPrioritySchedulerTest {
       // schedule one task a ways out
       scheduler.schedule(DoNothingRunnable.instance(), 1000 * 60 * 10);
       // ensure first thread has blocked
-      new TestCondition(() -> scheduler.workerPool.idleWorker.get() != null).blockTillTrue();
+      new TestCondition() {
+        @Override
+        public boolean get() {
+          for (AtomicReference<?> ar : scheduler.workerPool.idleWorkers) {
+            if (ar.get() != null) {
+              return true;
+            }
+          }
+          return false;
+        }
+      }.blockTillTrue();
       
       // start second thread
       scheduler.prestartAllThreads();
       // ensure second thread has blocked
-      new TestCondition(() -> scheduler.workerPool.idleWorker.get().nextIdleWorker != null)
-        .blockTillTrue();
+      new TestCondition() {
+        @Override
+        public boolean get() {
+          Worker w = null;
+          for (AtomicReference<Worker> ar : scheduler.workerPool.idleWorkers) {
+            if (ar.get() != null) {
+              if (w == null) {
+                w = ar.get();
+              } else {
+                return true;
+              }
+            }
+          }
+          return w != null && w.nextIdleWorker != null;
+        }
+      }.blockTillTrue();
       
       // schedule soon to run task
       TestRunnable tr = new TestRunnable();

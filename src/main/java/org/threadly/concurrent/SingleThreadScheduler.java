@@ -365,7 +365,7 @@ public class SingleThreadScheduler extends AbstractPriorityScheduler {
           scheduler.blockingTick(null);
         } catch (InterruptedException e) {
           // reset interrupted status
-          Thread.interrupted();
+          throw new UncheckedInterruptedException(e);
         } catch (Throwable t) {
           ExceptionUtils.handleException(t);
         }

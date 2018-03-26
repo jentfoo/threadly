@@ -5,13 +5,20 @@ import static org.threadly.TestConstants.*;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.junit.After;
 import org.junit.Test;
 import org.threadly.concurrent.SingleThreadScheduler;
+import org.threadly.concurrent.UncheckedInterruptedException;
 import org.threadly.concurrent.future.ListenableFuture;
 import org.threadly.util.Clock;
 
 @SuppressWarnings("javadoc")
 public class TestUtilTest {
+  @After
+  public void cleanup() {
+    Thread.interrupted(); // reset interrupted status
+  }
+  
   @Test
   public void sleepTest() {
     long start = Clock.accurateForwardProgressingMillis();
@@ -41,8 +48,9 @@ public class TestUtilTest {
       
       aboutToSleep.set(true);
       TestUtils.sleep(1000 * 20);
-      // should wake up from interrupt
-      
+      fail("Exception should have thrown");
+    } catch (UncheckedInterruptedException e) {
+      // expected
       assertTrue(Thread.interrupted());
     } finally {
       sts.shutdownNow();
