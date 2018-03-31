@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.threadly.concurrent.ReschedulingOperation;
 import org.threadly.concurrent.RunnableCallableAdapter;
 import org.threadly.concurrent.RunnableContainer;
 import org.threadly.concurrent.SameThreadSubmitterExecutor;
@@ -37,6 +38,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
   protected final Executor executor;
   protected final Queue<RunnableRunnableContainer> waitingTasks;
   protected final boolean limitFutureListenersExecution;
+  protected final WaitingTaskConsumer waitingTaskConsumer;
   private final AtomicInteger currentlyRunning;
   private volatile int maxConcurrency;
   
@@ -73,6 +75,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
     this.executor = executor;
     this.waitingTasks = new ConcurrentLinkedQueue<>();
     this.limitFutureListenersExecution = limitFutureListenersExecution;
+    this.waitingTaskConsumer = new WaitingTaskConsumer(SameThreadSubmitterExecutor.instance());
     this.currentlyRunning = new AtomicInteger(0);
     this.maxConcurrency = maxConcurrency;
   }
@@ -123,7 +126,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
     boolean increasing = this.maxConcurrency < maxConcurrency; 
     this.maxConcurrency = maxConcurrency;
     if (increasing) {
-      consumeAvailable();
+      waitingTaskConsumer.signalToRun();
     }
   }
   
@@ -159,25 +162,6 @@ public class ExecutorLimiter implements SubmitterExecutor {
   }
   
   /**
-   * Submit any tasks that we can to the parent executor (dependent on our pools limit).
-   */
-  protected void consumeAvailable() {
-    if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
-      // shortcut before we lock
-      return;
-    }
-    /* must synchronize in queue consumer to avoid multiple threads from consuming tasks in 
-     * parallel and possibly emptying after .isEmpty() check but before .poll()
-     */
-    synchronized (this) {
-      while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
-        // by entering loop we can now execute task
-        executor.execute(waitingTasks.poll());
-      }
-    }
-  }
-  
-  /**
    * Check that not only are we able to submit tasks to the pool, but there are no tasks currently 
    * waiting to already be submitted.  If only {@link #canSubmitTaskToPool()} is checked, tasks 
    * may be able to cut in line with tasks that are already queued in the waiting queue.
@@ -191,10 +175,10 @@ public class ExecutorLimiter implements SubmitterExecutor {
   /**
    * Called to indicate that hold for the task execution should be released. 
    */
-  private void releaseExecutionLimit() {
+  protected void releaseExecutionLimit() {
     currentlyRunning.decrementAndGet();
     
-    consumeAvailable(); // allow any waiting tasks to run
+    waitingTaskConsumer.signalToRunImmediately(true);
   }
 
   /**
@@ -249,7 +233,34 @@ public class ExecutorLimiter implements SubmitterExecutor {
    */
   protected void addToQueue(RunnableRunnableContainer lrw) {
     waitingTasks.add(lrw);
-    consumeAvailable(); // call to consume in case task finished after first check
+    waitingTaskConsumer.signalToRun();  // call to consume in case task finished after first check
+  }
+  
+  /**
+   * Rescheduling operation which as needed will consume from the waiting task queue and submit 
+   * the tasks to the delegate executor.
+   */
+  protected class WaitingTaskConsumer extends ReschedulingOperation {
+    protected WaitingTaskConsumer(Executor executor) {
+      super(executor);
+    }
+
+    @Override
+    protected void run() {
+      if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
+        // shortcut before we lock
+        return;
+      }
+      /* ReschedulingOperation is single threaded, but we need to lock to make remove 
+       * operations work in the SchedulerServiceLimiter
+       */
+      synchronized (this) {
+        while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
+          // by entering loop we can now execute task
+          executor.execute(waitingTasks.poll());
+        }
+      }
+    }
   }
 
   // TODO - make higher level and reuse for this common interface combination?  Or avoid javadocs pollution?

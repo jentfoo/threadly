@@ -106,8 +106,8 @@ public class SchedulerServiceLimiter extends SubmitterSchedulerLimiter
       }
     }
     
-    // synchronize on this so that we don't consume tasks while trying to remove
-    synchronized (this) {
+    // synchronize on waitingTaskConsumer so that we don't consume tasks while trying to remove
+    synchronized (waitingTaskConsumer) {
       return ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
     }
   }
@@ -131,9 +131,9 @@ public class SchedulerServiceLimiter extends SubmitterSchedulerLimiter
         }
       }
     }
-    
-    // synchronize on this so that we don't consume tasks while trying to remove
-    synchronized (this) {
+
+    // synchronize on waitingTaskConsumer so that we don't consume tasks while trying to remove
+    synchronized (waitingTaskConsumer) {
       return ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
     }
   }

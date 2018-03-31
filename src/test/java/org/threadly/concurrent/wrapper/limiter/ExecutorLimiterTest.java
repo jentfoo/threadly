@@ -139,7 +139,7 @@ public class ExecutorLimiterTest extends SubmitterExecutorInterfaceTest {
       limiter.waitingTasks.add(limiter.new LimiterRunnableWrapper(tr));
     }
     
-    limiter.consumeAvailable();
+    limiter.waitingTaskConsumer.signalToRunImmediately(true);
     
     // should be fully consumed
     assertEquals(0, limiter.waitingTasks.size());
