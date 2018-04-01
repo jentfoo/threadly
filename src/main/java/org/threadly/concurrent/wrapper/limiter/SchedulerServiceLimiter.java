@@ -28,8 +28,14 @@ import org.threadly.concurrent.future.ListenableFuture;
  * rely on.  If you have a {@link SchedulerService} available this implementation should be 
  * preferred over the {@link SubmitterSchedulerLimiter}.
  * <p>
+<<<<<<< HEAD
  * If limiting to a single thread, please see {@link SingleThreadSchedulerSubPool} as a possible 
  * alternative.
+=======
+ * Task removal does currently have some impacts in task execution performance in this 
+ * implementation.  If possible please use {@link SubmitterSchedulerLimiter} or 
+ * {@link ExecutorLimiter} as lighter weight alternatives.
+>>>>>>> ExecutorLimiter: Non-locking implementation for task consumption
  * 
  * @since 4.6.0 (since 2.0.0 at org.threadly.concurrent.limiter)
  */
@@ -135,6 +141,25 @@ public class SchedulerServiceLimiter extends SubmitterSchedulerLimiter
     // synchronize on this so that we don't consume tasks while trying to remove
     synchronized (this) {
       return ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
+    }
+  }
+  
+  // we must have an implementation where we can block queue consumption while removing tasks
+  // this is because the removal from the queue and the submission to the scheduler is not atomic
+  // so there is always the chance that when removing a task we might not find the task because it's 
+  // in that state.  In addition because we do have to synchronize, it makes more sense to have 
+  // an implementation optimized for that compared to the non-locking implementation in the super
+  @Override
+  protected void consumeAvailable() {
+    if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
+      // shortcut before we lock
+      return;
+    }
+    synchronized (this) {
+      while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
+        // by entering loop we can now execute task
+        executor.execute(waitingTasks.poll());
+      }
     }
   }
 

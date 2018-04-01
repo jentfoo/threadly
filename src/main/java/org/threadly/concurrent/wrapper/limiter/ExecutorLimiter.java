@@ -37,8 +37,8 @@ public class ExecutorLimiter implements SubmitterExecutor {
   protected final Executor executor;
   protected final Queue<RunnableRunnableContainer> waitingTasks;
   protected final boolean limitFutureListenersExecution;
-  private final AtomicInteger currentlyRunning;
-  private volatile int maxConcurrency;
+  protected final AtomicInteger currentlyRunning;
+  protected volatile int maxConcurrency;
   
   /**
    * Construct a new execution limiter that implements the {@link Executor} interface.
@@ -162,17 +162,19 @@ public class ExecutorLimiter implements SubmitterExecutor {
    * Submit any tasks that we can to the parent executor (dependent on our pools limit).
    */
   protected void consumeAvailable() {
-    if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
-      // shortcut before we lock
-      return;
-    }
-    /* must synchronize in queue consumer to avoid multiple threads from consuming tasks in 
-     * parallel and possibly emptying after .isEmpty() check but before .poll()
-     */
-    synchronized (this) {
-      while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
-        // by entering loop we can now execute task
-        executor.execute(waitingTasks.poll());
+    boolean hasPoolSlot = false;
+    try {
+      RunnableRunnableContainer rrc;
+      while ((hasPoolSlot = ! waitingTasks.isEmpty() && canSubmitTaskToPool()) && 
+               (rrc = waitingTasks.poll()) != null) {
+        executor.execute(rrc);
+      }
+    } finally {
+      if (hasPoolSlot) {
+        // we got a pool slot without having a task to execute
+        currentlyRunning.decrementAndGet();
+        // must retry since other threads may have failed to consume due to our holding of the unused pool slot
+        consumeAvailable();
       }
     }
   }
