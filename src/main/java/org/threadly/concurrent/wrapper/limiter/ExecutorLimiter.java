@@ -37,6 +37,8 @@ public class ExecutorLimiter implements SubmitterExecutor {
   protected final Executor executor;
   protected final Queue<RunnableRunnableContainer> waitingTasks;
   protected final boolean limitFutureListenersExecution;
+  // 0 = idle, 1 = running, 2 = updated while running
+  protected final AtomicInteger consumeState;
   private final AtomicInteger currentlyRunning;
   private volatile int maxConcurrency;
   
@@ -73,6 +75,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
     this.executor = executor;
     this.waitingTasks = new ConcurrentLinkedQueue<>();
     this.limitFutureListenersExecution = limitFutureListenersExecution;
+    this.consumeState = new AtomicInteger(0);
     this.currentlyRunning = new AtomicInteger(0);
     this.maxConcurrency = maxConcurrency;
   }
@@ -163,16 +166,35 @@ public class ExecutorLimiter implements SubmitterExecutor {
    */
   protected void consumeAvailable() {
     if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
-      // shortcut before we lock
+      // shortcut before we loop
       return;
     }
-    /* must synchronize in queue consumer to avoid multiple threads from consuming tasks in 
-     * parallel and possibly emptying after .isEmpty() check but before .poll()
-     */
-    synchronized (this) {
-      while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
-        // by entering loop we can now execute task
-        executor.execute(waitingTasks.poll());
+    
+    while (true) {
+      int casState = consumeState.get();
+      if (casState == 0) {
+        if (consumeState.compareAndSet(0, 1)) {
+          while (true) {
+            while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
+              // by entering loop we can now execute task
+              executor.execute(waitingTasks.poll());
+            }
+            
+            if (consumeState.get() == 1 && consumeState.compareAndSet(1, 0)) {
+              break;
+            } else {
+              consumeState.set(1); // setting status from 2 back to 1 for loop
+            }
+          }
+          break;
+        }
+      } else if (casState == 1) {
+        if (consumeState.compareAndSet(1, 2)) {
+          break;
+        }
+      } else {
+        // already marked as updated
+        break;
       }
     }
   }

@@ -105,10 +105,34 @@ public class SchedulerServiceLimiter extends SubmitterSchedulerLimiter
         }
       }
     }
-    
-    // synchronize on waitingTaskConsumer so that we don't consume tasks while trying to remove
-    synchronized (this) {
-      return ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
+
+    while (true) {
+      int casState = consumeState.get();
+      if (casState == 0) {
+        if (consumeState.compareAndSet(0, 1)) {
+          boolean result = ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
+          
+          // either set back to idle, or consume if indicated it was needed
+          while (true) {
+            casState = consumeState.get();
+            if (casState == 1) {
+              if (consumeState.compareAndSet(1, 0)) {
+                break;
+              }
+            } else if (casState == 2) {
+              consumeState.set(0);
+              consumeAvailable();
+              break;
+            } else {
+              throw new IllegalStateException();
+            }
+          }
+          return result;
+        }
+      } else {
+        // loop till we know nothing will consume from our waiting tasks
+        Thread.yield();
+      }
     }
   }
 
@@ -132,9 +156,33 @@ public class SchedulerServiceLimiter extends SubmitterSchedulerLimiter
       }
     }
 
-    // synchronize on this so that we don't consume tasks while trying to remove
-    synchronized (this) {
-      return ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
+    while (true) {
+      int casState = consumeState.get();
+      if (casState == 0) {
+        if (consumeState.compareAndSet(0, 1)) {
+          boolean result = ContainerHelper.remove(waitingTasks, task) || scheduler.remove(task);
+
+          // either set back to idle, or consume if indicated it was needed
+          while (true) {
+            casState = consumeState.get();
+            if (casState == 1) {
+              if (consumeState.compareAndSet(1, 0)) {
+                break;
+              }
+            } else if (casState == 2) {
+              consumeState.set(0);
+              consumeAvailable();
+              break;
+            } else {
+              throw new IllegalStateException();
+            }
+          }
+          return result;
+        }
+      } else {
+        // loop till we know nothing will consume from our waiting tasks
+        Thread.yield();
+      }
     }
   }
 
