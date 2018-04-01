@@ -4,6 +4,7 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.threadly.concurrent.RunnableCallableAdapter;
@@ -37,6 +38,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
   protected final Executor executor;
   protected final Queue<RunnableRunnableContainer> waitingTasks;
   protected final boolean limitFutureListenersExecution;
+  private final AtomicBoolean consuming;
   private final AtomicInteger currentlyRunning;
   private volatile int maxConcurrency;
   
@@ -73,6 +75,7 @@ public class ExecutorLimiter implements SubmitterExecutor {
     this.executor = executor;
     this.waitingTasks = new ConcurrentLinkedQueue<>();
     this.limitFutureListenersExecution = limitFutureListenersExecution;
+    this.consuming = new AtomicBoolean(false);
     this.currentlyRunning = new AtomicInteger(0);
     this.maxConcurrency = maxConcurrency;
   }
@@ -162,18 +165,26 @@ public class ExecutorLimiter implements SubmitterExecutor {
    * Submit any tasks that we can to the parent executor (dependent on our pools limit).
    */
   protected void consumeAvailable() {
-    if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty()) {
+    if (currentlyRunning.get() >= maxConcurrency || waitingTasks.isEmpty() || consuming.get()) {
       // shortcut before we lock
       return;
     }
-    /* must synchronize in queue consumer to avoid multiple threads from consuming tasks in 
-     * parallel and possibly emptying after .isEmpty() check but before .poll()
-     */
-    synchronized (this) {
-      while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
-        // by entering loop we can now execute task
-        executor.execute(waitingTasks.poll());
+    if (consuming.compareAndSet(false, true)) {
+      /* must synchronize in queue consumer to avoid multiple threads from consuming tasks in 
+       * parallel and possibly emptying after .isEmpty() check but before .poll()
+       */
+      synchronized (this) {
+        doConsume();
+        consuming.set(false);
+        doConsume();
       }
+    }
+  }
+  
+  private void doConsume() {
+    while (! waitingTasks.isEmpty() && canSubmitTaskToPool()) {
+      // by entering loop we can now execute task
+      executor.execute(waitingTasks.poll());
     }
   }
   
