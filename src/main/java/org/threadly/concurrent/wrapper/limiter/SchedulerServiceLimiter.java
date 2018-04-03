@@ -28,14 +28,12 @@ import org.threadly.concurrent.future.ListenableFuture;
  * rely on.  If you have a {@link SchedulerService} available this implementation should be 
  * preferred over the {@link SubmitterSchedulerLimiter}.
  * <p>
-<<<<<<< HEAD
  * If limiting to a single thread, please see {@link SingleThreadSchedulerSubPool} as a possible 
  * alternative.
-=======
+ * <p>
  * Task removal does currently have some impacts in task execution performance in this 
  * implementation.  If possible please use {@link SubmitterSchedulerLimiter} or 
  * {@link ExecutorLimiter} as lighter weight alternatives.
->>>>>>> ExecutorLimiter: Non-locking implementation for task consumption
  * 
  * @since 4.6.0 (since 2.0.0 at org.threadly.concurrent.limiter)
  */
