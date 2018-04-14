@@ -31,8 +31,6 @@ import org.threadly.util.Clock;
  */
 public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   protected final DelegateExecutorWorkerPool workerPool;
-  protected final QueueManager taskQueueManager;
-
 
   /**
    * Constructs a new sub-pool.
@@ -55,8 +53,8 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    */
   public PrioritySchedulerSubPool(SchedulerService delegateScheduler, int poolSize, 
                                   TaskPriority defaultPriority, long maxWaitForLowPriorityInMs) {
-    this(new DelegateExecutorWorkerPool(delegateScheduler, poolSize), 
-         defaultPriority, maxWaitForLowPriorityInMs);
+    this(new DelegateExecutorWorkerPool(delegateScheduler, poolSize, maxWaitForLowPriorityInMs), 
+         defaultPriority);
   }
   
   /**
@@ -66,16 +64,11 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    * 
    * @param workerPool WorkerPool to handle accepting tasks and providing them to a worker for execution
    * @param defaultPriority Default priority to store in case no priority is provided for tasks
-   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
    */
-  protected PrioritySchedulerSubPool(DelegateExecutorWorkerPool workerPool, TaskPriority defaultPriority, 
-                                     long maxWaitForLowPriorityInMs) {
+  protected PrioritySchedulerSubPool(DelegateExecutorWorkerPool workerPool, TaskPriority defaultPriority) {
     super(defaultPriority);
     
     this.workerPool = workerPool;
-    taskQueueManager = new QueueManager(workerPool, maxWaitForLowPriorityInMs);
-    
-    workerPool.setQueueManager(taskQueueManager);
   }
   
   /**
@@ -126,7 +119,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
 
   @Override
   protected OneTimeTaskWrapper doSchedule(Runnable task, long delayInMillis, TaskPriority priority) {
-    QueueSet queueSet = taskQueueManager.getQueueSet(priority);
+    QueueSet queueSet = workerPool.queueManager.getQueueSet(priority);
     OneTimeTaskWrapper result;
     if (delayInMillis == 0) {
       result = new OneTimeTaskWrapper(task, queueSet.getExecuteQueue(), 
@@ -151,7 +144,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       priority = defaultPriority;
     }
 
-    QueueSet queueSet = taskQueueManager.getQueueSet(priority);
+    QueueSet queueSet = workerPool.queueManager.getQueueSet(priority);
     queueSet.addScheduled(new RecurringDelayTaskWrapper(task, queueSet, 
                                                         Clock.accurateForwardProgressingMillis() + 
                                                           initialDelay, 
@@ -168,7 +161,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       priority = defaultPriority;
     }
 
-    QueueSet queueSet = taskQueueManager.getQueueSet(priority);
+    QueueSet queueSet = workerPool.queueManager.getQueueSet(priority);
     queueSet.addScheduled(new RecurringRateTaskWrapper(task, queueSet, 
                                                        Clock.accurateForwardProgressingMillis() + initialDelay, 
                                                        period));
@@ -176,7 +169,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
 
   @Override
   protected QueueManager getQueueManager() {
-    return taskQueueManager;
+    return workerPool.queueManager;
   }
   
   /**
@@ -186,12 +179,13 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    */
   protected static class DelegateExecutorWorkerPool implements QueueSetListener {
     protected final SchedulerService delegateScheduler;
+    protected final QueueManager queueManager;
     protected final Object poolSizeChangeLock;
     protected final AtomicInteger currentPoolSize;
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
-    private QueueManager queueManager;  // set before any threads started
     
-    protected DelegateExecutorWorkerPool(SchedulerService delegateScheduler, int poolSize) {
+    public DelegateExecutorWorkerPool(SchedulerService delegateScheduler, int poolSize, 
+                                      long maxWaitForLowPriorityInMs) {
       ArgumentVerifier.assertNotNull(delegateScheduler, "delegateScheduler");
       ArgumentVerifier.assertGreaterThanZero(poolSize, "poolSize");
       
@@ -199,22 +193,8 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       currentPoolSize = new AtomicInteger(0);
       
       this.delegateScheduler = delegateScheduler;
+      queueManager = new QueueManager(this, maxWaitForLowPriorityInMs);
       this.maxPoolSize = poolSize;
-    }
-
-    // TODO - fix this awkward cicular dependency.  Because we don't have the GC requirements of 
-    //          the code that inspired this implementation, this could likely be changed easily.
-    /**
-     * This should only be called once after construction and can NOT be called concurrently.
-     * 
-     * @param queueManager QueueManager to source tasks for execution from
-     */
-    public void setQueueManager(QueueManager queueManager) {
-      if (currentPoolSize.get() != 0) {
-        throw new IllegalStateException();
-      }
-      
-      this.queueManager = queueManager;
     }
 
     /**
