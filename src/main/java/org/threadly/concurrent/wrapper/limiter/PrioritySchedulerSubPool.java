@@ -1,12 +1,16 @@
 package org.threadly.concurrent.wrapper.limiter;
 
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.threadly.concurrent.AbstractPriorityScheduler;
+import org.threadly.concurrent.ReschedulingOperation;
 import org.threadly.concurrent.SchedulerService;
 import org.threadly.concurrent.TaskPriority;
 import org.threadly.util.ArgumentVerifier;
 import org.threadly.util.Clock;
+import org.threadly.util.ExceptionUtils;
 
 /**
  * Executor to run tasks, schedule tasks.  Unlike 
@@ -52,27 +56,13 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    */
   public PrioritySchedulerSubPool(SchedulerService delegateScheduler, int poolSize, 
                                   TaskPriority defaultPriority, long maxWaitForLowPriorityInMs) {
-    this(new DelegateExecutorWorkerPool(delegateScheduler, poolSize), 
-         defaultPriority, maxWaitForLowPriorityInMs);
-  }
-  
-  /**
-   * This constructor is designed for extending classes to be able to provide their own 
-   * implementation of {@link DelegateExecutorWorkerPool}.  Ultimately all constructors will defer 
-   * to this one.
-   * 
-   * @param workerPool WorkerPool to handle accepting tasks and providing them to a worker for execution
-   * @param defaultPriority Default priority to store in case no priority is provided for tasks
-   * @param maxWaitForLowPriorityInMs time low priority tasks to wait if there are high priority tasks ready to run
-   */
-  protected PrioritySchedulerSubPool(DelegateExecutorWorkerPool workerPool, TaskPriority defaultPriority, 
-                                     long maxWaitForLowPriorityInMs) {
     super(defaultPriority);
     
-    this.workerPool = workerPool;
-    taskQueueManager = new QueueManager(workerPool, maxWaitForLowPriorityInMs);
-    
-    workerPool.start(taskQueueManager);
+    Queue<Runnable> readyToExecuteQueue = new ConcurrentLinkedQueue<>();
+    this.workerPool = new DelegateExecutorWorkerPool(delegateScheduler, poolSize, readyToExecuteQueue);
+    QueueChecker queueChecker = new QueueChecker(delegateScheduler, readyToExecuteQueue, workerPool);
+    taskQueueManager = new QueueManager(queueChecker, maxWaitForLowPriorityInMs);
+    queueChecker.setQueueManager(taskQueueManager);
   }
   
   /**
@@ -207,6 +197,41 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
     return taskQueueManager;
   }
   
+  protected static class QueueChecker extends ReschedulingOperation implements QueueSetListener {
+    private final Queue<Runnable> readyToExecutTasks;
+    private final QueueSetListener workerPool;
+    private QueueManager queueManager;
+    
+    protected QueueChecker(Executor executor, Queue<Runnable> readyToExecutTasks, 
+                           QueueSetListener workerPool) {
+      super(executor);
+      
+      this.readyToExecutTasks = readyToExecutTasks;
+      this.workerPool = workerPool;
+    }
+    
+    // TODO - fix awkward circular dependency
+    public void setQueueManager(QueueManager queueManager) {
+      this.queueManager = queueManager;
+    }
+
+    @Override
+    public void handleQueueUpdate() {
+      this.signalToRunImmediately(true);
+    }
+
+    @Override
+    protected void run() {
+      TaskWrapper nextTask;
+      while ((nextTask = queueManager.getNextTask()) != null && nextTask.getScheduleDelay() <= 0) {
+        nextTask.canExecute(nextTask.getExecuteReference());  // single threaded, so can just signal execution
+        // TODO - handle race condition with removing tasks
+        readyToExecutTasks.add(nextTask.getContainedRunnable());
+        workerPool.handleQueueUpdate();
+      }
+    }
+  }
+  
   /**
    * Class to manage the pool of worker threads.  This class handles creating workers, storing 
    * them, and killing them once they are ready to expire.  It also handles finding the 
@@ -216,12 +241,13 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    */
   protected static class DelegateExecutorWorkerPool implements QueueSetListener {
     protected final Executor delegateExecutor;
+    protected final Queue<Runnable> readyToExecuteTasks;  // set before any threads started
     protected final Object poolSizeChangeLock;
     protected final AtomicInteger currentPoolSize;
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
-    private QueueManager queueManager;  // set before any threads started
     
-    protected DelegateExecutorWorkerPool(Executor delegateExecutor, int poolSize) {
+    protected DelegateExecutorWorkerPool(Executor delegateExecutor, int poolSize, 
+                                         Queue<Runnable> readyToExecuteTasks) {
       ArgumentVerifier.assertNotNull(delegateExecutor, "delegateExecutor");
       ArgumentVerifier.assertGreaterThanZero(poolSize, "poolSize");
       
@@ -229,21 +255,8 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       currentPoolSize = new AtomicInteger(0);
       
       this.delegateExecutor = delegateExecutor;
+      this.readyToExecuteTasks = readyToExecuteTasks;
       this.maxPoolSize = poolSize;
-    }
-
-    /**
-     * Starts the pool, constructing the first thread to start consuming tasks (and starting other 
-     * threads as appropriate).  This should only be called once, and can NOT be called concurrently.
-     * 
-     * @param queueManager QueueManager to source tasks for execution from
-     */
-    public void start(QueueManager queueManager) {
-      if (currentPoolSize.get() != 0) {
-        throw new IllegalStateException();
-      }
-      
-      this.queueManager = queueManager;
     }
 
     /**
@@ -319,79 +332,13 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       return currentPoolSize.get();
     }
 
-    /**
-     * Invoked when a worker becomes idle.  This will provide another task for that worker, or 
-     * block until a task is either ready, or the worker should be shutdown (either because pool 
-     * was shut down, or max pool size changed).
-     * 
-     * @return Task that is ready for immediate execution
-     */
-    public TaskWrapper workerIdle() {
-      /* pool state checks, if any of these change we need a dummy task added to the queue to 
-       * break out of the task polling loop below.  This is done as an optimization, to avoid 
-       * needing to check these on every loop (since they rarely change)
-       */
-      while (true) {
-        int casPoolSize;
-        if ((casPoolSize = currentPoolSize.get()) > maxPoolSize) {
-          if (currentPoolSize.compareAndSet(casPoolSize, casPoolSize - 1)) {
-            return null;  // return null so worker will shutdown
-          }
-        } else {
-          // pool state is consistent, we should keep running
-          break;
-        }
-      }
-      
-      try {
-        while (true) {
-          TaskWrapper nextTask = queueManager.getNextTask();
-          if (nextTask == null) {
-            currentPoolSize.decrementAndGet();
-            return null;  // let worker shutdown
-          } else {
-            /* TODO - right now this has a a deficiency where a recurring period task can cut in 
-             * the queue line.  The condition would be as follows:
-             * 
-             * * Thread 1 gets task to run...task is behind execution schedule, likely due to large queue
-             * * Thread 2 gets same task
-             * * Thread 1 gets reference, executes, task execution completes
-             * * Thread 2 now gets the reference, and execution check and time check pass fine
-             * * End result is that task has executed twice (on expected schedule), the second 
-             *     execution was unfair since it was done without respects to queue order and 
-             *     other tasks which are also likely behind execution schedule in this example
-             *     
-             * This should be very rare, but is possible.  The only way I see to solve this right 
-             * now is to introduce locking.
-             * 
-             * This is the same problem that can exist in the PriorityScheduler this class was based off of
-             */
-            // must get executeReference before time is checked
-            short executeReference = nextTask.getExecuteReference();
-            long taskDelay = nextTask.getScheduleDelay();
-            if (taskDelay > 0) {
-              if (taskDelay < Long.MAX_VALUE) {
-                // TODO - need to reschedule execution
-              }
-              currentPoolSize.decrementAndGet();
-              return null;  // let worker shutdown
-            } else if (nextTask.canExecute(executeReference)) {
-              return nextTask;
-            }
-          }
-        } // end pollTask loop
-      } finally {
-        Thread.interrupted();  // reset interrupted status if set
-      }
-    }
-
     @Override
     public void handleQueueUpdate() {
       int casSize;
       while ((casSize = currentPoolSize.get()) < maxPoolSize) {
         if (currentPoolSize.compareAndSet(casSize, casSize + 1)) {
           // start a new worker for the next task
-          delegateExecutor.execute(new Worker(this));
+          delegateExecutor.execute(new Worker(readyToExecuteTasks));
           break;
         } // else loop and retry logic
       }
@@ -404,17 +351,17 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
    * @since 5.16
    */
   protected static class Worker implements Runnable {
-    protected final DelegateExecutorWorkerPool workerPool;
+    protected final Queue<Runnable> taskQueue;
     
-    protected Worker(DelegateExecutorWorkerPool workerPool) {
-      this.workerPool = workerPool;
+    protected Worker(Queue<Runnable> taskQueue) {
+      this.taskQueue = taskQueue;
     }
     
     @Override
     public void run() {
-      TaskWrapper nextTask;
-      while ((nextTask = workerPool.workerIdle()) != null) {
-        nextTask.runTask();
+      Runnable nextTask;
+      while ((nextTask = taskQueue.poll()) != null) {
+        ExceptionUtils.runRunnable(nextTask);
       }
     }
   }
