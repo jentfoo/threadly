@@ -8,41 +8,45 @@ import org.threadly.util.ArgumentVerifier;
 import org.threadly.util.Clock;
 
 /**
- * Executor to run tasks, schedule tasks.  Unlike 
- * {@link java.util.concurrent.ScheduledThreadPoolExecutor} this scheduled executor's pool size 
- * can shrink if set with a lower value via {@link #setPoolSize(int)}.  It also has the benefit 
- * that you can provide "low priority" tasks.
+ * This sub-pool is a special type of limiter.  It is able to have expanded semantics than the pool 
+ * it delegates to.  For example this pool provides {@link TaskPriority} capabilities even though 
+ * the pool it runs on top of does not necessarily provide that.  In addition most status's returned 
+ * do not consider the parent pools state (for example {@link #getActiveTaskCount()} does not 
+ * reflect the active tasks in the parent pool).
  * <p>
- * These low priority tasks will delay their execution if there are other high priority tasks 
- * ready to run, as long as they have not exceeded their maximum wait time.  If they have exceeded 
- * their maximum wait time, and high priority tasks delay time is less than the low priority delay 
- * time, then those low priority tasks will be executed.  What this results in is a task which has 
- * lower priority, but which wont be starved from execution.
+ * Most importantly difference in this "sub-pool" vs "limiter" is the way task execution order is 
+ * maintained in the delegate pool.  In a limiter tasks will need to queue individually against the 
+ * other tasks the delegate pool needs to execute.  In this implementation the sub-pool basically 
+ * gets CPU time and it will attempt to execute everything it needs to.  It will not return the 
+ * thread to the delegate pool until there is nothing left to process.
  * <p>
- * Most tasks provided into this pool will likely want to be "high priority", to more closely 
- * match the behavior of other thread pools.  That is why unless specified by the constructor, the 
- * default {@link TaskPriority} is High.
- * <p>
- * In all conditions, "low priority" tasks will never be starved.  This makes "low priority" tasks 
- * ideal which do regular cleanup, or in general anything that must run, but cares little if there 
- * is a 1, or 10 second gap in the execution time.  That amount of tolerance is adjustable by 
- * setting the {@code maxWaitForLowPriorityInMs} either in the constructor, or at runtime via 
- * {@link #setMaxWaitForLowPriority(long)}.
+ * There are two big reasons you might want to use this sub pool over a limiter.  As long as the 
+ * above details are not problematic, this is a more efficient implementation.  Providing 
+ * better load characteristics for submitting tasks, as well reducing the burden on the delegate 
+ * pool.  In addition if you need concurrency limiting + priority capabilities, this or 
+ * {@link SingleThreadSchedulerSubPool} are your only options.  If limiting to a single thread 
+ * {@link SingleThreadSchedulerSubPool} is a higher performance option.
  * 
  * @since 5.16
  */
 public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   protected final DelegateExecutorWorkerPool workerPool;
   protected final QueueManager taskQueueManager;
-  
+
+
+  /**
+   * Constructs a new sub-pool.
+   * 
+   * @param delegateScheduler The scheduler to perform task execution on
+   * @param poolSize Thread pool size that should be maintained
+   */
   public PrioritySchedulerSubPool(SchedulerService delegateScheduler, int poolSize) {
     this(delegateScheduler, poolSize, DEFAULT_PRIORITY, DEFAULT_LOW_PRIORITY_MAX_WAIT_IN_MS);
   }
 
   /**
-   * Constructs a new thread pool, though threads will be lazily started as it has tasks ready to 
-   * run.  This provides the extra parameters to tune what tasks submitted without a priority 
-   * will be scheduled as.  As well as the maximum wait for low priority tasks.
+   * Constructs a new sub-pool.  This provides the extra parameters to tune what tasks submitted 
+   * without a priority will be scheduled as.  As well as the maximum wait for low priority tasks.
    * 
    * @param delegateScheduler The scheduler to perform task execution on
    * @param poolSize Thread pool size that should be maintained
@@ -71,7 +75,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
     this.workerPool = workerPool;
     taskQueueManager = new QueueManager(workerPool, maxWaitForLowPriorityInMs);
     
-    workerPool.start(taskQueueManager);
+    workerPool.setQueueManager(taskQueueManager);
   }
   
   /**
@@ -84,14 +88,14 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   }
   
   /**
-   * Change the set thread pool size.
+   * Change the set sub-pool size.
    * <p>
-   * If the value is less than the current running threads, as threads finish they will exit 
+   * If the value is less than the current running workers, as workers finish they will exit 
    * rather than accept new tasks.  No currently running tasks will be interrupted, rather we 
-   * will just wait for them to finish before killing the thread.
+   * will just wait for them to finish before killing the worker.
    * <p>
-   * If this is an increase in the pool size, threads will be lazily started as needed till the 
-   * new size is reached.  If there are tasks waiting for threads to run on, they immediately 
+   * If this is an increase in the pool size, workers will be lazily started as needed till the 
+   * new size is reached.  If there are tasks waiting for workers to run on, they immediately 
    * will be started.
    * 
    * @param newPoolSize New core pool size, must be at least one
@@ -119,26 +123,20 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   public boolean isShutdown() {
     return workerPool.delegateScheduler.isShutdown();
   }
-  
-  @Override
-  public int getQueuedTaskCount(TaskPriority priority) {
-    // TODO - parent pool?
-    return taskQueueManager.getQueueSet(priority).getExecuteQueue().size() + taskQueueManager.getQueueSet(priority).getScheduleQueue().size();
-  }
 
   @Override
   protected OneTimeTaskWrapper doSchedule(Runnable task, long delayInMillis, TaskPriority priority) {
     QueueSet queueSet = taskQueueManager.getQueueSet(priority);
     OneTimeTaskWrapper result;
     if (delayInMillis == 0) {
-      addToExecuteQueue(queueSet, 
-                        (result = new OneTimeTaskWrapper(task, queueSet.getExecuteQueue(), 
-                                                         Clock.lastKnownForwardProgressingMillis())));
+      result = new OneTimeTaskWrapper(task, queueSet.getExecuteQueue(), 
+                                      Clock.lastKnownForwardProgressingMillis());
+      queueSet.addExecute(result);
     } else {
-      addToScheduleQueue(queueSet, 
-                         (result = new OneTimeTaskWrapper(task, queueSet.getScheduleQueue(), 
-                                                          Clock.accurateForwardProgressingMillis() + 
-                                                            delayInMillis)));
+      result = new OneTimeTaskWrapper(task, queueSet.getScheduleQueue(), 
+                                      Clock.accurateForwardProgressingMillis() + 
+                                        delayInMillis);
+      queueSet.addScheduled(result);
     }
     return result;
   }
@@ -154,11 +152,10 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
     }
 
     QueueSet queueSet = taskQueueManager.getQueueSet(priority);
-    addToScheduleQueue(queueSet, 
-                       new RecurringDelayTaskWrapper(task, queueSet, 
-                                                     Clock.accurateForwardProgressingMillis() + 
-                                                       initialDelay, 
-                                                     recurringDelay));
+    queueSet.addScheduled(new RecurringDelayTaskWrapper(task, queueSet, 
+                                                        Clock.accurateForwardProgressingMillis() + 
+                                                          initialDelay, 
+                                                        recurringDelay));
   }
 
   @Override
@@ -172,34 +169,9 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
     }
 
     QueueSet queueSet = taskQueueManager.getQueueSet(priority);
-    addToScheduleQueue(queueSet, 
-                       new RecurringRateTaskWrapper(task, queueSet, 
-                                                    Clock.accurateForwardProgressingMillis() + initialDelay, 
-                                                    period));
-  }
-  
-  /**
-   * Adds the ready TaskWrapper to the correct execute queue.  Using the priority specified in the 
-   * task, we pick the correct queue and add it.
-   * <p>
-   * If this is a scheduled or recurring task use {@link #addToScheduleQueue(TaskWrapper)}.
-   * 
-   * @param task {@link TaskWrapper} to queue for the scheduler
-   */
-  protected void addToExecuteQueue(QueueSet queueSet, OneTimeTaskWrapper task) {
-    queueSet.addExecute(task);
-  }
-  
-  /**
-   * Adds the ready TaskWrapper to the correct schedule queue.  Using the priority specified in the 
-   * task, we pick the correct queue and add it.
-   * <p>
-   * If this is just a single execution with no delay use {@link #addToExecuteQueue(OneTimeTaskWrapper)}.
-   * 
-   * @param task {@link TaskWrapper} to queue for the scheduler
-   */
-  protected void addToScheduleQueue(QueueSet queueSet, TaskWrapper task) {
-    queueSet.addScheduled(task);
+    queueSet.addScheduled(new RecurringRateTaskWrapper(task, queueSet, 
+                                                       Clock.accurateForwardProgressingMillis() + initialDelay, 
+                                                       period));
   }
 
   @Override
@@ -208,10 +180,8 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   }
   
   /**
-   * Class to manage the pool of worker threads.  This class handles creating workers, storing 
-   * them, and killing them once they are ready to expire.  It also handles finding the 
-   * appropriate worker when a task is ready to be executed.
-   * TODO - update
+   * Class to manage the pool of workers that are running on a delegate pool.
+   * 
    * @since 5.16 
    */
   protected static class DelegateExecutorWorkerPool implements QueueSetListener {
@@ -232,13 +202,14 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
       this.maxPoolSize = poolSize;
     }
 
+    // TODO - fix this awkward cicular dependency.  Because we don't have the GC requirements of 
+    //          the code that inspired this implementation, this could likely be changed easily.
     /**
-     * Starts the pool, constructing the first thread to start consuming tasks (and starting other 
-     * threads as appropriate).  This should only be called once, and can NOT be called concurrently.
+     * This should only be called once after construction and can NOT be called concurrently.
      * 
      * @param queueManager QueueManager to source tasks for execution from
      */
-    public void start(QueueManager queueManager) {
+    public void setQueueManager(QueueManager queueManager) {
       if (currentPoolSize.get() != 0) {
         throw new IllegalStateException();
       }
@@ -274,15 +245,15 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
         return;
       }
       
-      boolean poolSizeIncrease;
+      int poolSizeIncrease;
       synchronized (poolSizeChangeLock) {
-        poolSizeIncrease = newPoolSize > this.maxPoolSize;
+        poolSizeIncrease = newPoolSize - this.maxPoolSize;
         
         this.maxPoolSize = newPoolSize;
       }
-      
-      if (poolSizeIncrease) {
-        handleQueueUpdate();
+
+      for (int i = 0; i < poolSizeIncrease; i++) {
+        handleQueueUpdate(false);
       }
     }
     
@@ -304,9 +275,9 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
         this.maxPoolSize += delta;
       }
       
-      if (delta > 0) {
+      for (int i = 0; i < delta; i++) {
         // now that pool size increased, start a worker so workers we can for the waiting tasks
-        handleQueueUpdate();
+        handleQueueUpdate(false);
       }
     }
     
@@ -347,7 +318,6 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
         while (true) {
           TaskWrapper nextTask = queueManager.getNextTask();
           if (nextTask == null) {
-            currentPoolSize.decrementAndGet();
             return null;  // let worker shutdown
           } else {
             /* TODO - right now this has a a deficiency where a recurring period task can cut in 
@@ -372,9 +342,8 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
             if (taskDelay > 0) {
               if (taskDelay < Long.MAX_VALUE) {
                 // TODO - is it best to schedule here, or at task submission?
-                delegateScheduler.schedule(this::handleQueueUpdate, taskDelay);
+                delegateScheduler.schedule(() -> handleQueueUpdate(true), taskDelay);
               }
-              currentPoolSize.decrementAndGet();
               return null;  // let worker shutdown
             } else if (nextTask.canExecute(executeReference)) {
               return nextTask;
@@ -388,11 +357,19 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
 
     @Override
     public void handleQueueUpdate() {
+      handleQueueUpdate(false);
+    }
+    
+    protected void handleQueueUpdate(boolean canRunOnThread) {
       int casSize;
       while ((casSize = currentPoolSize.get()) < maxPoolSize) {
         if (currentPoolSize.compareAndSet(casSize, casSize + 1)) {
           // start a new worker for the next task
-          delegateScheduler.execute(new Worker(this));
+          if (canRunOnThread) {
+            new Worker(this).run();
+          } else {
+            delegateScheduler.execute(new Worker(this));
+          }
           break;
         } // else loop and retry logic
       }
@@ -413,9 +390,13 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
     
     @Override
     public void run() {
-      TaskWrapper nextTask;
-      while ((nextTask = workerPool.workerIdle()) != null) {
-        nextTask.runTask();
+      try {
+        TaskWrapper nextTask;
+        while ((nextTask = workerPool.workerIdle()) != null) {
+          nextTask.runTask();
+        }
+      } finally {
+        workerPool.currentPoolSize.decrementAndGet();
       }
     }
   }

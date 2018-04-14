@@ -16,11 +16,6 @@ public class PrioritySchedulerSubPoolTest extends AbstractPrioritySchedulerTest 
   protected boolean isSingleThreaded() {
     return false;
   }
-  
-  @Override
-  public void getPriorityQueuedTaskCountTest() {
-    // TODO - ignored
-  }
 
   protected static class PrioritySchedulerSubPoolFactory implements AbstractPrioritySchedulerFactory {
     private final PrioritySchedulerFactory schedulerFactory = new PrioritySchedulerFactory();

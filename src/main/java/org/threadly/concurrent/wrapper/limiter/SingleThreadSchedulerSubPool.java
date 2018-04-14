@@ -23,7 +23,8 @@ import org.threadly.util.ExceptionUtils;
  * There are two big reasons you might want to use this sub pool over a limiter.  As long as the 
  * above details are not problematic, this is a much more efficient implementation.  Providing 
  * better load characteristics for submitting tasks, as well reducing the burden on the delegate 
- * pool.  In addition if you need limiter + priority capabilities, this is your only option.
+ * pool.  In addition if you need concurrency limiting + priority capabilities, this or 
+ * {@link PrioritySchedulerSubPool} are your only options.
  * 
  * @since 5.7
  */
