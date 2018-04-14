@@ -3,7 +3,7 @@ package org.threadly.concurrent;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.LongAdder;
 
-import org.threadly.concurrent.wrapper.limiter.SchedulerServiceLimiter;
+import org.threadly.concurrent.wrapper.limiter.PrioritySchedulerSubPool;
 import org.threadly.concurrent.wrapper.limiter.SingleThreadSchedulerSubPool;
 import org.threadly.concurrent.wrapper.priority.DefaultPriorityWrapper;
 import org.threadly.concurrent.wrapper.traceability.ThreadRenamingPriorityScheduler;
@@ -52,8 +52,8 @@ public class CentralThreadlyPool {
   protected static final PriorityScheduler MASTER_SCHEDULER;
   protected static final PrioritySchedulerService LOW_PRIORITY_MASTER_SCHEDULER;
   protected static final PrioritySchedulerService STARVABLE_PRIORITY_MASTER_SCHEDULER;
-  protected static final SchedulerService COMPUTATION_POOL;
-  protected static final SchedulerService LOW_PRIORITY_POOL;
+  protected static final PrioritySchedulerService COMPUTATION_POOL;
+  protected static final PrioritySchedulerService LOW_PRIORITY_POOL;
   protected static final PrioritySchedulerService SINGLE_THREADED_LOW_PRIORITY_POOL;
   protected static final PerTaskSizingSubmitterScheduler PER_TASK_SIZING_POOL;
   private static volatile int genericThreadCount;
@@ -73,7 +73,7 @@ public class CentralThreadlyPool {
     
     POOL_SIZE_UPDATER = new PoolResizeUpdater(LOW_PRIORITY_MASTER_SCHEDULER);
     
-    COMPUTATION_POOL = new SchedulerServiceLimiter(MASTER_SCHEDULER, cpuCount);
+    COMPUTATION_POOL = new PrioritySchedulerSubPool(MASTER_SCHEDULER, cpuCount);
     LOW_PRIORITY_POOL = new DynamicGenericThreadLimiter(TaskPriority.Low, 0, -1, "LowPriority");
     SINGLE_THREADED_LOW_PRIORITY_POOL = 
         new SinglePriorityThreadSubPool(TaskPriority.Low, false, 
@@ -110,7 +110,7 @@ public class CentralThreadlyPool {
    * 
    * @return Pool for CPU bound tasks
    */
-  public static SchedulerService computationPool() {
+  public static PrioritySchedulerService computationPool() {
     return computationPool(null);
   }
 
@@ -120,11 +120,11 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return Pool for CPU bound tasks
    */
-  public static SchedulerService computationPool(String threadName) {
+  public static PrioritySchedulerService computationPool(String threadName) {
     if (StringUtils.isNullOrEmpty(threadName)) {
       return COMPUTATION_POOL;
     } else {
-      return new ThreadRenamingSchedulerService(COMPUTATION_POOL, threadName, false);
+      return new ThreadRenamingPriorityScheduler(COMPUTATION_POOL, threadName, false);
     }
   }
   
@@ -163,7 +163,7 @@ public class CentralThreadlyPool {
    * 
    * @return Pool for running or scheduling out low priority tasks
    */
-  public static SchedulerService lowPriorityPool() {
+  public static PrioritySchedulerService lowPriorityPool() {
     return lowPriorityPool(null);
   }
   
@@ -176,11 +176,11 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return Pool for running or scheduling out low priority tasks
    */
-  public static SchedulerService lowPriorityPool(String threadName) {
+  public static PrioritySchedulerService lowPriorityPool(String threadName) {
     if (StringUtils.isNullOrEmpty(threadName)) {
       return LOW_PRIORITY_POOL;
     } else {
-      return new ThreadRenamingSchedulerService(LOW_PRIORITY_POOL, threadName, false);
+      return new ThreadRenamingPriorityScheduler(LOW_PRIORITY_POOL, threadName, false);
     }
   }
   
@@ -318,7 +318,7 @@ public class CentralThreadlyPool {
    * @param threadCount The number of threads that will be available to tasks submitted on the returned pool
    * @return A pool with the requested threads available for task scheduling or execution
    */
-  public static SchedulerService threadPool(int threadCount) {
+  public static PrioritySchedulerService threadPool(int threadCount) {
     return rangedThreadPool(TaskPriority.High, threadCount, threadCount, null);
   }
   
@@ -336,7 +336,7 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return A pool with the requested threads available for task scheduling or execution
    */
-  public static SchedulerService threadPool(int threadCount, String threadName) {
+  public static PrioritySchedulerService threadPool(int threadCount, String threadName) {
     return rangedThreadPool(TaskPriority.High, threadCount, threadCount, threadName);
   }
 
@@ -354,7 +354,7 @@ public class CentralThreadlyPool {
    * @param threadCount The number of threads that will be available to tasks submitted on the returned pool
    * @return A pool with the requested threads available for task scheduling or execution
    */
-  public static SchedulerService threadPool(TaskPriority priority, int threadCount) {
+  public static PrioritySchedulerService threadPool(TaskPriority priority, int threadCount) {
     return rangedThreadPool(priority, threadCount, threadCount, null);
   }
 
@@ -373,8 +373,8 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return A pool with the requested threads available for task scheduling or execution
    */
-  public static SchedulerService threadPool(TaskPriority priority, int threadCount, 
-                                            String threadName) {
+  public static PrioritySchedulerService threadPool(TaskPriority priority, int threadCount, 
+                                                    String threadName) {
     return rangedThreadPool(priority, threadCount, threadCount, threadName);
   }
   
@@ -395,7 +395,7 @@ public class CentralThreadlyPool {
    * @param maxThreads Maximum number of threads to the returned pool can consume, or negative to use any available
    * @return A pool with the requested specifications for task scheduling or execution
    */
-  public static SchedulerService rangedThreadPool(int guaranteedThreads, int maxThreads) {
+  public static PrioritySchedulerService rangedThreadPool(int guaranteedThreads, int maxThreads) {
     return rangedThreadPool(TaskPriority.High, guaranteedThreads, maxThreads, null);
   }
   
@@ -417,8 +417,8 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return A pool with the requested specifications for task scheduling or execution
    */
-  public static SchedulerService rangedThreadPool(int guaranteedThreads, int maxThreads, 
-                                                  String threadName) {
+  public static PrioritySchedulerService rangedThreadPool(int guaranteedThreads, int maxThreads, 
+                                                          String threadName) {
     return rangedThreadPool(TaskPriority.High, guaranteedThreads, maxThreads, threadName);
   }
   
@@ -440,8 +440,8 @@ public class CentralThreadlyPool {
    * @param maxThreads Maximum number of threads to the returned pool can consume, or negative to use any available
    * @return A pool with the requested specifications for task scheduling or execution
    */
-  public static SchedulerService rangedThreadPool(TaskPriority priority, 
-                                                  int guaranteedThreads, int maxThreads) {
+  public static PrioritySchedulerService rangedThreadPool(TaskPriority priority, 
+                                                          int guaranteedThreads, int maxThreads) {
     return rangedThreadPool(priority, guaranteedThreads, maxThreads, null);
   }
   
@@ -464,9 +464,9 @@ public class CentralThreadlyPool {
    * @param threadName Name to prefix to thread while tasks on this pool execute, or {@code null}
    * @return A pool with the requested specifications for task scheduling or execution
    */
-  public static SchedulerService rangedThreadPool(TaskPriority priority, 
-                                                  int guaranteedThreads, int maxThreads, 
-                                                  String threadName) {
+  public static PrioritySchedulerService rangedThreadPool(TaskPriority priority, 
+                                                          int guaranteedThreads, int maxThreads, 
+                                                          String threadName) {
     if (maxThreads == 1 && priority == TaskPriority.High) {
       // This single thread implementation is more memory intensive, but better performing
       return singleThreadPool(guaranteedThreads > 0, threadName);
@@ -733,17 +733,24 @@ public class CentralThreadlyPool {
    * This is necessary to be sure that when a returned scheduler requests a given qty of threads, 
    * those resources are for sure available to them.
    */
-  protected static class MasterSchedulerResizingLimiter extends SchedulerServiceLimiter {
+  protected static class MasterSchedulerResizingLimiter extends PrioritySchedulerSubPool {
     @SuppressWarnings("unused")
     private final Object gcReference; // object just held on to track garbage collection
     
-    public MasterSchedulerResizingLimiter(TaskPriority priority, 
+    public MasterSchedulerResizingLimiter(TaskPriority priority,  // TODO - priority handled right?
                                           int guaranteedThreads, int maxThreads, String threadName) {
       super(masterScheduler(priority, threadName), maxThreads < 1 ? Integer.MAX_VALUE : maxThreads);
       
       if (maxThreads > 0 && guaranteedThreads > maxThreads) {
         throw new IllegalArgumentException("Max threads must be <= guaranteed threads");
       }
+      
+      this.gcReference = guaranteedThreads > 0 ? new PoolResizer(guaranteedThreads) : null;
+    }
+    
+    protected MasterSchedulerResizingLimiter(DelegateExecutorWorkerPool workerPool, 
+                                             TaskPriority defaultPriority, int guaranteedThreads) {
+      super(workerPool, defaultPriority);
       
       this.gcReference = guaranteedThreads > 0 ? new PoolResizer(guaranteedThreads) : null;
     }
@@ -758,25 +765,24 @@ public class CentralThreadlyPool {
    * is a better option.
    */
   protected static class DynamicGenericThreadLimiter extends MasterSchedulerResizingLimiter {
-    private final int guaranteedThreads;
-    private final int maxThreads;
-    
     public DynamicGenericThreadLimiter(TaskPriority priority, 
                                        int guaranteedThreads, int maxThreads, String threadName) {
-      super(priority, guaranteedThreads, maxThreads, threadName);
+      super(new DelegateExecutorWorkerPool(masterScheduler(priority, threadName), maxThreads, 
+                                           LOW_PRIORITY_MAX_WAIT_IN_MS) {
+        @Override
+        protected void handleQueueUpdate(boolean canRunOnThread) {
+          int allowedConcurrency = Math.min(maxThreads, guaranteedThreads + genericThreadCount);
+          if (allowedConcurrency != getMaxPoolSize()) {
+            setPoolSize(allowedConcurrency);
+          }
+          
+          super.handleQueueUpdate(canRunOnThread);
+        }
+      }, priority, guaranteedThreads);
       
-      this.guaranteedThreads = guaranteedThreads > 0 ? guaranteedThreads : 0;
-      this.maxThreads = getMaxConcurrency();
-    }
-
-    @Override
-    protected boolean canSubmitTaskToPool() {
-      int allowedConcurrency = Math.min(maxThreads, guaranteedThreads + genericThreadCount);
-      if (allowedConcurrency != getMaxConcurrency()) {
-        setMaxConcurrency(allowedConcurrency);
+      if (maxThreads > 0 && guaranteedThreads > maxThreads) {
+        throw new IllegalArgumentException("Max threads must be <= guaranteed threads");
       }
-      
-      return super.canSubmitTaskToPool();
     }
   }
   
