@@ -610,8 +610,6 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         });
       }
     }
-    
-    
 
     /**
      * Check for the current quantity of threads running in this pool (either active or idle).

@@ -27,7 +27,8 @@ import org.threadly.util.ArgumentVerifier;
  * are able to accomplish more efficiently thread use than multiple thread pools would.
  * <p>
  * If limiting to a single thread, please see {@link SingleThreadSchedulerSubPool} as a possible 
- * alternative.
+ * alternative.  Or if unfair execution is acceptable then {@link PrioritySchedulerSubPool} is a 
+ * faster alternative.
  * 
  * @since 4.6.0 (since 1.0.0 at org.threadly.concurrent.limiter)
  */

@@ -247,6 +247,14 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       this.scheduleQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
       scheduleQueueRunTimeByIndex = (index) -> scheduleQueue.get(index).getRunTime();
     }
+    
+    public Queue<? extends TaskWrapper> getExecuteQueue() {
+      return executeQueue;
+    }
+    
+    public Queue<? extends TaskWrapper> getScheduleQueue() {
+      return scheduleQueue;
+    }
 
     /**
      * Adds a task for immediate execution.  No safety checks are done at this point, the task 
@@ -695,7 +703,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
     // optimization to avoid queue traversal on failure to remove, cheaper than AtomicBoolean
     private volatile boolean executed;
     
-    protected OneTimeTaskWrapper(Runnable task, Queue<? extends TaskWrapper> taskQueue, long runTime) {
+    public OneTimeTaskWrapper(Runnable task, Queue<? extends TaskWrapper> taskQueue, long runTime) {
       super(task);
       
       this.taskQueue = taskQueue;
@@ -895,8 +903,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   protected static class RecurringDelayTaskWrapper extends RecurringTaskWrapper {
     protected final long recurringDelay;
     
-    protected RecurringDelayTaskWrapper(Runnable task, QueueSet queueSet, 
-                                        long firstRunTime, long recurringDelay) {
+    public RecurringDelayTaskWrapper(Runnable task, QueueSet queueSet, 
+                                     long firstRunTime, long recurringDelay) {
       super(task, queueSet, firstRunTime);
       
       this.recurringDelay = recurringDelay;
@@ -916,8 +924,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   protected static class RecurringRateTaskWrapper extends RecurringTaskWrapper {
     protected final long period;
     
-    protected RecurringRateTaskWrapper(Runnable task, QueueSet queueSet, 
-                                       long firstRunTime, long period) {
+    public RecurringRateTaskWrapper(Runnable task, QueueSet queueSet, 
+                                    long firstRunTime, long period) {
       super(task, queueSet, firstRunTime);
       
       this.period = period;
