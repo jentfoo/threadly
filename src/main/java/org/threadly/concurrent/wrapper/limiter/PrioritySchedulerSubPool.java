@@ -27,7 +27,7 @@ import org.threadly.util.Clock;
  * {@link SingleThreadSchedulerSubPool} are your only options.  If limiting to a single thread 
  * {@link SingleThreadSchedulerSubPool} is a higher performance option.
  * 
- * @since 5.16
+ * @since 5.19
  */
 public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   protected final DelegateExecutorWorkerPool workerPool;
@@ -175,7 +175,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   /**
    * Class to manage the pool of workers that are running on a delegate pool.
    * 
-   * @since 5.16 
+   * @since 5.19
    */
   protected static class DelegateExecutorWorkerPool implements QueueSetListener {
     protected final SchedulerService delegateScheduler;
@@ -359,7 +359,7 @@ public class PrioritySchedulerSubPool extends AbstractPriorityScheduler {
   /**
    * Runnable which tries to poll tasks and execute them
    * 
-   * @since 5.16
+   * @since 5.19
    */
   protected static class Worker implements Runnable {
     protected final DelegateExecutorWorkerPool workerPool;

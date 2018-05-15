@@ -737,9 +737,10 @@ public class CentralThreadlyPool {
     @SuppressWarnings("unused")
     private final Object gcReference; // object just held on to track garbage collection
     
-    public MasterSchedulerResizingLimiter(TaskPriority priority,  // TODO - priority handled right?
+    public MasterSchedulerResizingLimiter(TaskPriority priority, 
                                           int guaranteedThreads, int maxThreads, String threadName) {
-      super(masterScheduler(priority, threadName), maxThreads < 1 ? Integer.MAX_VALUE : maxThreads);
+      super(masterScheduler(priority, threadName), maxThreads < 1 ? Integer.MAX_VALUE : maxThreads, 
+            TaskPriority.High, LOW_PRIORITY_MAX_WAIT_IN_MS);
       
       if (maxThreads > 0 && guaranteedThreads > maxThreads) {
         throw new IllegalArgumentException("Max threads must be <= guaranteed threads");
@@ -748,9 +749,8 @@ public class CentralThreadlyPool {
       this.gcReference = guaranteedThreads > 0 ? new PoolResizer(guaranteedThreads) : null;
     }
     
-    protected MasterSchedulerResizingLimiter(DelegateExecutorWorkerPool workerPool, 
-                                             TaskPriority defaultPriority, int guaranteedThreads) {
-      super(workerPool, defaultPriority);
+    protected MasterSchedulerResizingLimiter(DelegateExecutorWorkerPool workerPool, int guaranteedThreads) {
+      super(workerPool, TaskPriority.High);
       
       this.gcReference = guaranteedThreads > 0 ? new PoolResizer(guaranteedThreads) : null;
     }
@@ -778,7 +778,7 @@ public class CentralThreadlyPool {
           
           super.handleQueueUpdate(canRunOnThread);
         }
-      }, priority, guaranteedThreads);
+      }, guaranteedThreads);
       
       if (maxThreads > 0 && guaranteedThreads > maxThreads) {
         throw new IllegalArgumentException("Max threads must be <= guaranteed threads");
