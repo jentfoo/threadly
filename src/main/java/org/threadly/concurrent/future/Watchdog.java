@@ -1,5 +1,6 @@
 package org.threadly.concurrent.future;
 
+import java.lang.ref.WeakReference;
 import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -107,16 +108,11 @@ public class Watchdog {
     if (future == null || future.isDone()) {
       return;
     }
-    
+
     final FutureWrapper fw = new FutureWrapper(future);
     futures.add(fw);
     // we attempt to remove the future on completion to reduce inspection needed
-    future.addListener(new Runnable() {
-      @Override
-      public void run() {
-        futures.remove(fw);
-      }
-    }, SameThreadSubmitterExecutor.instance());
+    future.addListener(new WrapperRemover(fw), SameThreadSubmitterExecutor.instance());
     
     checkRunner.signalToRun();
   }
@@ -127,13 +123,32 @@ public class Watchdog {
    * 
    * @since 4.0.0
    */
-  private class FutureWrapper {
+  private class FutureWrapper extends WeakReference<ListenableFuture<?>> {
     public final long expireTime;
-    private final ListenableFuture<?> future;
 
     public FutureWrapper(ListenableFuture<?> future) {
+      super(future);
+      
       this.expireTime = Clock.accurateForwardProgressingMillis() + timeoutInMillis;
-      this.future = future;
+    }
+  }
+  
+  /**
+   * Listener implementation for removing the wrapper from the queue when it completes (and thus 
+   * invokes this).
+   * 
+   * @since 5.20
+   */
+  private class WrapperRemover implements Runnable {
+    private final FutureWrapper fw;
+    
+    protected WrapperRemover(FutureWrapper fw) {
+      this.fw = fw;
+    }
+    
+    @Override
+    public void run() {
+      futures.remove(fw);
     }
   }
 
@@ -158,7 +173,10 @@ public class Watchdog {
         fw = it.next();
         if (now >= fw.expireTime || (now = Clock.accurateForwardProgressingMillis()) >= fw.expireTime) {
           it.remove();
-          fw.future.cancel(sendInterruptToTrackedThreads);
+          ListenableFuture<?> lf = fw.get();
+          if (lf != null) {
+            lf.cancel(sendInterruptToTrackedThreads);
+          }
           fw = null;
         } else {
           /* since futures are added in order of expiration, 
