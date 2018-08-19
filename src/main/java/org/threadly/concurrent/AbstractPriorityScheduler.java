@@ -434,10 +434,17 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
         }
         synchronized (sortedQueue.getModificationLock()) {
           TaskWrapper task;
+          long lastTaskTime = Long.MAX_VALUE;
+          int lastTaskIndex = -1;
           while ((task = tempAddQueue.poll()) != null) {
-            sortedQueue.add(SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
-                                                             sortedQueue.size() - 1, 
-                                                             task.getRunTime(), true), task);
+            long runTime = task.getRunTime();
+            lastTaskIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
+                                                           lastTaskTime <= runTime ? 
+                                                             lastTaskIndex : 0,
+                                                           sortedQueue.size() - 1, 
+                                                           runTime, true);
+            lastTaskTime = runTime;
+            sortedQueue.add(lastTaskIndex, task);
           }
         }
       }

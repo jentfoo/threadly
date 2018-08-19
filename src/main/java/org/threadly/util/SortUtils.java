@@ -40,7 +40,25 @@ public class SortUtils {
    */
   public static int getInsertionEndIndex(Function<Integer, Long> valueProvider, int absoluteMax,
                                          long insertionValue, boolean randomAccessList) {
-    int searchResult = binarySearch(valueProvider, absoluteMax, insertionValue, randomAccessList);
+    return getInsertionEndIndex(valueProvider, 0, absoluteMax, insertionValue, randomAccessList);
+  }
+  
+  /**
+   * This function uses the binary search and adds a small amount of logic such that it determines 
+   * the placement index for a given value.  It is designed to always return the index after any 
+   * values which equal the provided insertion value.
+   * 
+   * @param valueProvider Function which will provide values for requested indexes
+   * @param absoluteMax maximum index (inclusive) to search within
+   * @param insertionValue value in relation to functions provided values to search for insertion point
+   * @param randomAccessList boolean for optimization with binary search
+   * @return the index to insert the key into the list
+   */
+  public static int getInsertionEndIndex(Function<Integer, Long> valueProvider, 
+                                         int absoluteMin, int absoluteMax,
+                                         long insertionValue, boolean randomAccessList) {
+    int searchResult = binarySearch(valueProvider, absoluteMin, absoluteMax, 
+                                    insertionValue, randomAccessList);
     if (searchResult >= 0) {
       while (searchResult <= absoluteMax && valueProvider.apply(searchResult) == insertionValue) {
         searchResult++;
@@ -63,7 +81,7 @@ public class SortUtils {
    * @return index where found, or -(insertion point) - 1 if not found
    */
   public static int binarySearch(List<Long> values, long insertionValue, boolean randomAccessList) {
-    return binarySearch(values::get, values.size() - 1, insertionValue, randomAccessList);
+    return binarySearch(values::get, 0, values.size() - 1, insertionValue, randomAccessList);
   }
   
   /**
@@ -80,11 +98,29 @@ public class SortUtils {
    */
   public static int binarySearch(Function<Integer, Long> valueProvider, int absoluteMax,
                                  long insertionValue, boolean randomAccessList) {
-    if (absoluteMax < 0) {
+    return binarySearch(valueProvider, absoluteMax, insertionValue, randomAccessList);
+  }
+  
+  /**
+   * A faster binary search algorithm for sorting a list.  This algorithm works by actually 
+   * knowing the values and making smart decisions about how far to jump in the list based on 
+   * those values.  Which is why this can not take in a comparable interface like Collections 
+   * does.  This was adapted from code posted from this blog post: http://ochafik.com/blog/?p=106
+   * 
+   * @param valueProvider Function which will provide values for requested indexes
+   * @param absoluteMax maximum index (inclusive) to search within
+   * @param insertionValue value in relation to functions provided values to search for insertion point
+   * @param randomAccessList {@code true} to optimize for list that have cheap random access
+   * @return index where found, or -(insertion point) - 1 if not found
+   */
+  public static int binarySearch(Function<Integer, Long> valueProvider, 
+                                 int absoluteMin, int absoluteMax,
+                                 long insertionValue, boolean randomAccessList) {
+    if (absoluteMax < absoluteMin) {
       return -1;
     }
     
-    int min = 0;
+    int min = absoluteMin;
     int max = absoluteMax;
     long minVal = valueProvider.apply(min);
     long maxVal = valueProvider.apply(max);
