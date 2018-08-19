@@ -407,6 +407,11 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
         // TODO - concerns about inaccurate counts due to queue change?
         return tempAddQueue.size() + sortedQueue.size();
       }
+      
+      @Override
+      public boolean isEmpty() {
+        return sortedQueue.isEmpty() && tempAddQueue.isEmpty();
+      }
 
       @Override
       public boolean add(TaskWrapper task) {
@@ -428,10 +433,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           return;
         }
         synchronized (sortedQueue.getModificationLock()) {
-          Iterator<TaskWrapper> it = tempAddQueue.iterator();
-          while (it.hasNext()) {
-            TaskWrapper task = it.next();
-            it.remove();
+          TaskWrapper task;
+          while ((task = tempAddQueue.poll()) != null) {
             sortedQueue.add(SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
                                                              sortedQueue.size() - 1, 
                                                              task.getRunTime(), true), task);
@@ -528,16 +531,16 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
             /* we have to reposition to the end atomically so that this task can be removed if 
              * requested to be removed.  We can put it at the end because we know this task wont 
              * run again till it has finished (which it will be inserted at the correct point in 
-             * queue then.
+             * queue then).
              */
             int sourceIndex = sortedQueue.indexOf(taskWrapper);
             if (sourceIndex >= 0) {
+              taskWrapper.executing = true;
+              taskWrapper.executeFlipCounter++;
               if (sourceIndex < sortedQueue.size() - 1 && 
                   sortedQueue.get(sourceIndex + 1).getRunTime() != Long.MAX_VALUE) {
                 sortedQueue.reposition(sourceIndex, sortedQueue.size());
               }
-              taskWrapper.executing = true;
-              taskWrapper.executeFlipCounter++;
               return true;
             } else {
               return false;
