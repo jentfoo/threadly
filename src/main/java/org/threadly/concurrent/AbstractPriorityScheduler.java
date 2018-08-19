@@ -1,5 +1,6 @@
 package org.threadly.concurrent;
 
+import java.util.AbstractCollection;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -8,6 +9,7 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import org.threadly.concurrent.collections.ConcurrentArrayList;
@@ -198,19 +200,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
     }
     
     QueueSet qs = getQueueManager().getQueueSet(priority);
-    int result = qs.executeQueue.size();
-    for (int i = 0; i < qs.scheduleQueue.size(); i++) {
-      try {
-        if (qs.scheduleQueue.get(i).getScheduleDelay() > 0) {
-          break;
-        } else {
-          result++;
-        }
-      } catch (IndexOutOfBoundsException e) {
-        break;
-      }
-    }
-    return result;
+    return qs.executeQueue.size() + qs.scheduleQueue.getWaitingForExecutionTaskCount();
   }
   
   /**
@@ -238,14 +228,12 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
   protected static class QueueSet {
     protected final QueueSetListener queueListener;
     protected final ConcurrentLinkedQueue<OneTimeTaskWrapper> executeQueue;
-    protected final ConcurrentArrayList<TaskWrapper> scheduleQueue;
-    protected final Function<Integer, Long> scheduleQueueRunTimeByIndex;
+    protected final ScheduleQueue scheduleQueue;
     
     public QueueSet(QueueSetListener queueListener) {
       this.queueListener = queueListener;
       this.executeQueue = new ConcurrentLinkedQueue<>();
-      this.scheduleQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
-      scheduleQueueRunTimeByIndex = (index) -> scheduleQueue.get(index).getRunTime();
+      this.scheduleQueue = new ScheduleQueue();
     }
 
     /**
@@ -268,15 +256,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * @param task Task to insert into the schedule queue
      */
     public void addScheduled(TaskWrapper task) {
-      int insertionIndex;
-      synchronized (scheduleQueue.getModificationLock()) {
-        insertionIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
-                                                        scheduleQueue.size() - 1, 
-                                                        task.getRunTime(), true);
-        scheduleQueue.add(insertionIndex, task);
-      }
-      
-      if (insertionIndex == 0) {
+      if (scheduleQueue.add(task)) {
         queueListener.handleQueueUpdate();
       }
     }
@@ -298,20 +278,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           }
         }
       }
-      synchronized (scheduleQueue.getModificationLock()) {
-        Iterator<? extends TaskWrapper> it = scheduleQueue.iterator();
-        while (it.hasNext()) {
-          TaskWrapper tw = it.next();
-          if (ContainerHelper.isContained(tw.task, task)) {
-            tw.invalidate();
-            it.remove();
-            
-            return true;
-          }
-        }
-      }
-      
-      return false;
+      return scheduleQueue.remove(task);
     }
 
     /**
@@ -331,20 +298,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           }
         }
       }
-      synchronized (scheduleQueue.getModificationLock()) {
-        Iterator<? extends TaskWrapper> it = scheduleQueue.iterator();
-        while (it.hasNext()) {
-          TaskWrapper tw = it.next();
-          if (ContainerHelper.isContained(tw.task, task)) {
-            tw.invalidate();
-            it.remove();
-            
-            return true;
-          }
-        }
-      }
-      
-      return false;
+      return scheduleQueue.remove(task);
     }
 
     /**
@@ -359,14 +313,14 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
     }
 
     public void drainQueueInto(List<TaskWrapper> removedTasks) {
-      clearQueue(executeQueue, removedTasks);
-      synchronized (scheduleQueue.getModificationLock()) {
-        clearQueue(scheduleQueue, removedTasks);
-      }
+      copyQueue(executeQueue, removedTasks);
+      copyQueue(scheduleQueue, removedTasks);
+      executeQueue.clear();
+      scheduleQueue.clear();
     }
   
-    private static void clearQueue(Collection<? extends TaskWrapper> queue, 
-                                   List<TaskWrapper> resultList) {
+    private static void copyQueue(Iterable<? extends TaskWrapper> queue, 
+                                  List<TaskWrapper> resultList) {
       boolean resultWasEmpty = resultList.isEmpty();
       Iterator<? extends TaskWrapper> it = queue.iterator();
       while (it.hasNext()) {
@@ -388,7 +342,6 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
           }
         }
       }
-      queue.clear();
     }
     
     /**
@@ -412,6 +365,185 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
         }
       } else {
         return scheduledTask;
+      }
+    }
+    
+    protected static class ScheduleQueue extends AbstractCollection<TaskWrapper> {
+      protected final ReentrantLock removeLock;
+      protected final ConcurrentLinkedQueue<TaskWrapper> tempAddQueue;
+      protected final ConcurrentArrayList<TaskWrapper> sortedQueue;
+      protected final Function<Integer, Long> scheduleQueueRunTimeByIndex;
+      
+      public ScheduleQueue() {
+        removeLock = new ReentrantLock();
+        tempAddQueue = new ConcurrentLinkedQueue<>();
+        this.sortedQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
+        scheduleQueueRunTimeByIndex = (index) -> sortedQueue.get(index).getRunTime();
+      }
+
+      public int getWaitingForExecutionTaskCount() {
+        int result = 0;
+        for (int i = 0; i < sortedQueue.size(); i++) {
+          try {
+            if (sortedQueue.get(i).getScheduleDelay() > 0) {
+              break;
+            } else {
+              result++;
+            }
+          } catch (IndexOutOfBoundsException e) {
+            break;
+          }
+        }
+        for (TaskWrapper tw : tempAddQueue) {
+          if (tw.getScheduleDelay() <= 0) {
+            result++;
+          }
+        }
+        return result;
+      }
+
+      @Override
+      public int size() {
+        // TODO - concerns about inaccurate counts due to queue change?
+        return tempAddQueue.size() + sortedQueue.size();
+      }
+
+      @Override
+      public boolean add(TaskWrapper task) {
+        TaskWrapper sortedQueueHead = sortedQueue.peek();
+        boolean mayBeQueueUpdate;
+        if (sortedQueueHead == null) {
+          TaskWrapper tempQueueHead = tempAddQueue.peek(); // not sorted, but not worth checking full queue either
+          mayBeQueueUpdate = tempQueueHead == null || tempQueueHead.getRunTime() > task.getRunTime();
+        } else {
+          mayBeQueueUpdate = sortedQueueHead.getRunTime() > task.getRunTime();
+        }
+        tempAddQueue.add(task);
+        
+        return mayBeQueueUpdate;
+      }
+      
+      protected void syncQueue() {
+        if (tempAddQueue.isEmpty()) {
+          return;
+        }
+        synchronized (sortedQueue.getModificationLock()) {
+          Iterator<TaskWrapper> it = tempAddQueue.iterator();
+          while (it.hasNext()) {
+            TaskWrapper task = it.next();
+            it.remove();
+            sortedQueue.add(SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
+                                                             sortedQueue.size() - 1, 
+                                                             task.getRunTime(), true), task);
+          }
+        }
+      }
+
+      public TaskWrapper peekFirst() {
+        syncQueue();
+        return sortedQueue.peekFirst();
+      }
+
+      @Override
+      public void clear() {
+        tempAddQueue.clear();
+        sortedQueue.clear();
+      }
+
+      public boolean remove(Callable<?> task) {
+        synchronized (sortedQueue.getModificationLock()) {
+          Iterator<? extends TaskWrapper> it = iterator();  // will sync queue
+          while (it.hasNext()) {
+            TaskWrapper tw = it.next();
+            if (ContainerHelper.isContained(tw.task, task)) {
+              tw.invalidate();
+              it.remove();
+              
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      }
+      
+      public boolean remove(Runnable task) {
+        synchronized (sortedQueue.getModificationLock()) {
+          Iterator<? extends TaskWrapper> it = iterator();  // will sync queue
+          while (it.hasNext()) {
+            TaskWrapper tw = it.next();
+            if (ContainerHelper.isContained(tw.task, task)) {
+              tw.invalidate();
+              it.remove();
+              
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      }
+
+      @Override
+      public Iterator<TaskWrapper> iterator() {
+        syncQueue();  // must sync before any iteration is useful (at least for current iteration needs)
+        return sortedQueue.iterator();
+      }
+
+      public boolean reschedule(RecurringTaskWrapper taskWrapper) {
+        int insertionIndex = -1;
+        synchronized (sortedQueue.getModificationLock()) {
+          int currentIndex = sortedQueue.lastIndexOf(taskWrapper);
+          if (currentIndex > 0) {
+            insertionIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
+                                                            sortedQueue.size() - 1, 
+                                                            taskWrapper.nextRunTime, true);
+            
+            sortedQueue.reposition(currentIndex, insertionIndex);
+          } else if (currentIndex == 0) {
+            insertionIndex = 0;
+          } else {
+            // task removed, no-op, but might as well tidy up the state even though nothing cares
+          }
+          
+          // we can only update executing AFTER the reposition has finished
+          // The synchronization lock must be held during this because changing executing
+          // changes the scheduled delay, and thus we can not have other threads examining the task queue
+          taskWrapper.executing = false;
+          taskWrapper.executeFlipCounter++;  // increment again to indicate execute state change
+        }
+        
+        return insertionIndex == 0;
+      }
+
+      public boolean canExecute(RecurringTaskWrapper taskWrapper, short executeReference) {
+        if (taskWrapper.executing | taskWrapper.executeFlipCounter != executeReference) {
+          return false;
+        }
+        synchronized (sortedQueue.getModificationLock()) {
+          if (taskWrapper.executing | taskWrapper.executeFlipCounter != executeReference) {
+            // this task is already running, or not ready to run, so ignore
+            return false;
+          } else {
+            /* we have to reposition to the end atomically so that this task can be removed if 
+             * requested to be removed.  We can put it at the end because we know this task wont 
+             * run again till it has finished (which it will be inserted at the correct point in 
+             * queue then.
+             */
+            int sourceIndex = sortedQueue.indexOf(taskWrapper);
+            if (sourceIndex >= 0) {
+              if (sourceIndex < sortedQueue.size() - 1 && 
+                  sortedQueue.get(sourceIndex + 1).getRunTime() != Long.MAX_VALUE) {
+                sortedQueue.reposition(sourceIndex, sortedQueue.size());
+              }
+              taskWrapper.executing = true;
+              taskWrapper.executeFlipCounter++;
+              return true;
+            } else {
+              return false;
+            }
+          }
+        }
       }
     }
   }
@@ -690,12 +822,12 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
    * @since 1.0.0
    */
   protected static class OneTimeTaskWrapper extends TaskWrapper {
-    protected final Queue<? extends TaskWrapper> taskQueue;
+    protected final Collection<? extends TaskWrapper> taskQueue;
     protected final long runTime;
     // optimization to avoid queue traversal on failure to remove, cheaper than AtomicBoolean
     private volatile boolean executed;
     
-    protected OneTimeTaskWrapper(Runnable task, Queue<? extends TaskWrapper> taskQueue, long runTime) {
+    protected OneTimeTaskWrapper(Runnable task, Collection<? extends TaskWrapper> taskQueue, long runTime) {
       super(task);
       
       this.taskQueue = taskQueue;
@@ -816,33 +948,7 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
 
     @Override
     public boolean canExecute(short executeReference) {
-      if (executing | executeFlipCounter != executeReference) {
-        return false;
-      }
-      synchronized (queueSet.scheduleQueue.getModificationLock()) {
-        if (executing | executeFlipCounter != executeReference) {
-          // this task is already running, or not ready to run, so ignore
-          return false;
-        } else {
-          /* we have to reposition to the end atomically so that this task can be removed if 
-           * requested to be removed.  We can put it at the end because we know this task wont 
-           * run again till it has finished (which it will be inserted at the correct point in 
-           * queue then.
-           */
-          int sourceIndex = queueSet.scheduleQueue.indexOf(this);
-          if (sourceIndex >= 0) {
-            if (sourceIndex < queueSet.scheduleQueue.size() - 1 && 
-                queueSet.scheduleQueue.get(sourceIndex + 1).getRunTime() != Long.MAX_VALUE) {
-              queueSet.scheduleQueue.reposition(sourceIndex, queueSet.scheduleQueue.size());
-            }
-            executing = true;
-            executeFlipCounter++;
-            return true;
-          } else {
-            return false;
-          }
-        }
-      }
+      return queueSet.scheduleQueue.canExecute(this, executeReference);
     }
 
     /**
@@ -852,30 +958,8 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
      * queue should be.
      */
     protected void reschedule() {
-      int insertionIndex = -1;
-      synchronized (queueSet.scheduleQueue.getModificationLock()) {
-        int currentIndex = queueSet.scheduleQueue.lastIndexOf(this);
-        if (currentIndex > 0) {
-          insertionIndex = SortUtils.getInsertionEndIndex(queueSet.scheduleQueueRunTimeByIndex, 
-                                                          queueSet.scheduleQueue.size() - 1, 
-                                                          nextRunTime, true);
-          
-          queueSet.scheduleQueue.reposition(currentIndex, insertionIndex);
-        } else if (currentIndex == 0) {
-          insertionIndex = 0;
-        } else {
-          // task removed, no-op, but might as well tidy up the state even though nothing cares
-        }
-        
-        // we can only update executing AFTER the reposition has finished
-        // The synchronization lock must be held during this because changing executing
-        // changes the scheduled delay, and thus we can not have other threads examining the task queue
-        executing = false;
-        executeFlipCounter++;  // increment again to indicate execute state change
-      }
-
-      // kind of awkward we need to know here, but we we need to let the queue set know if the head changed
-      if (insertionIndex == 0) {
+      if (queueSet.scheduleQueue.reschedule(this)) {
+        // kind of awkward notify update here, but we we need to let the queue set know if the head changed
         queueSet.queueListener.handleQueueUpdate();
       }
     }

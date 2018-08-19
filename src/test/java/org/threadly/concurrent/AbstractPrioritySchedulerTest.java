@@ -102,11 +102,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                       Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                       Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(4, result.getQueuedTaskCount());
 
@@ -117,11 +117,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                       Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                       Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(8, result.getQueuedTaskCount());
       assertEquals(8, result.getQueuedTaskCount(null));
@@ -145,11 +145,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(0, result.getQueuedTaskCount(TaskPriority.Starvable));
 
@@ -160,11 +160,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Starvable)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Starvable)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(4, result.getQueuedTaskCount(TaskPriority.Starvable));
     } finally {
@@ -185,11 +185,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(0, result.getQueuedTaskCount(TaskPriority.Low));
 
@@ -200,11 +200,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(4, result.getQueuedTaskCount(TaskPriority.Low));
     } finally {
@@ -225,11 +225,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(4, result.getQueuedTaskCount(TaskPriority.High));
 
@@ -240,11 +240,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 1000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 1000));
       
       assertEquals(4, result.getQueuedTaskCount(TaskPriority.High));
     } finally {
@@ -262,11 +262,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 60_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 60_000));
       
       assertEquals(2, result.getWaitingForExecutionTaskCount());
 
@@ -274,11 +274,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 60_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 60_000));
       
       assertEquals(4, result.getWaitingForExecutionTaskCount());
       assertEquals(4, result.getWaitingForExecutionTaskCount(null));
@@ -302,11 +302,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(0, result.getWaitingForExecutionTaskCount(TaskPriority.Low));
 
@@ -317,11 +317,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(3, result.getWaitingForExecutionTaskCount(TaskPriority.Low));
     } finally {
@@ -342,11 +342,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(3, result.getWaitingForExecutionTaskCount(TaskPriority.High));
 
@@ -357,11 +357,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Low)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(3, result.getWaitingForExecutionTaskCount(TaskPriority.High));
     } finally {
@@ -382,11 +382,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.High)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(0, result.getWaitingForExecutionTaskCount(TaskPriority.Starvable));
 
@@ -397,11 +397,11 @@ public abstract class AbstractPrioritySchedulerTest extends SchedulerServiceInte
             .executeQueue.add(new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
                                                      Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Starvable)
-            .scheduleQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis()));
+            .scheduleQueue.sortedQueue.add(0, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis()));
       result.getQueueManager().getQueueSet(TaskPriority.Starvable)
-            .scheduleQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
-                                                         Clock.lastKnownForwardProgressingMillis() + 10_000));
+            .scheduleQueue.sortedQueue.add(1, new OneTimeTaskWrapper(DoNothingRunnable.instance(), null, 
+                                                                     Clock.lastKnownForwardProgressingMillis() + 10_000));
       
       assertEquals(3, result.getWaitingForExecutionTaskCount(TaskPriority.Starvable));
     } finally {

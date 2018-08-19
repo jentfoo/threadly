@@ -90,7 +90,7 @@ public class PrioritySchedulerQueueSetTest extends ThreadlyTester {
     assertTrue(queueSet.remove(callable));
     assertFalse(queueSet.remove(callable));
     
-    queueSet.scheduleQueue.addFirst(task);
+    queueSet.scheduleQueue.sortedQueue.addFirst(task);
 
     assertTrue(queueSet.remove(callable));
     assertFalse(queueSet.remove(callable));
@@ -109,7 +109,7 @@ public class PrioritySchedulerQueueSetTest extends ThreadlyTester {
     assertTrue(queueSet.remove(runnable));
     assertFalse(queueSet.remove(runnable));
     
-    queueSet.scheduleQueue.addFirst(task);
+    queueSet.scheduleQueue.sortedQueue.addFirst(task);
 
     assertTrue(queueSet.remove(runnable));
     assertFalse(queueSet.remove(runnable));
@@ -123,7 +123,7 @@ public class PrioritySchedulerQueueSetTest extends ThreadlyTester {
                                                      Clock.lastKnownForwardProgressingMillis());
     
     queueSet.executeQueue.add(task);
-    queueSet.scheduleQueue.addFirst(task);
+    queueSet.scheduleQueue.sortedQueue.addFirst(task);
     
     assertEquals(2, queueSet.queueSize());
   }

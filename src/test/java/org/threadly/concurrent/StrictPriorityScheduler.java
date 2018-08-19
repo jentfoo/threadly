@@ -3,8 +3,6 @@ package org.threadly.concurrent;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadFactory;
 
-import org.threadly.concurrent.collections.ConcurrentArrayList;
-
 /**
  * In order to avoid a performance hit by verifying state which would indicate a programmer 
  * error at runtime.  This class functions to verify those little things during unit tests.  
@@ -96,7 +94,7 @@ public class StrictPriorityScheduler extends PriorityScheduler {
       if (queueSet.executeQueue != task.taskQueue) {
         throw new IllegalStateException("Queue missmatch");
       }
-    } else if (task.taskQueue instanceof ConcurrentArrayList) {
+    } else if (task.taskQueue instanceof QueueSet.ScheduleQueue) {
       if (queueSet.scheduleQueue != task.taskQueue) {
         throw new IllegalStateException("Queue missmatch");
       }
@@ -145,7 +143,9 @@ public class StrictPriorityScheduler extends PriorityScheduler {
 
     @Override
     public boolean canExecute(short executeReference) {
-      synchronized (queueSet.scheduleQueue.getModificationLock()) {
+      return super.canExecute(executeReference);
+      // TODO - worth maintaining the below check?
+      /*synchronized (queueSet.scheduleQueue.getModificationLock()) {
         if (super.canExecute(executeReference)) {
           int index = queueSet.scheduleQueue.lastIndexOf(this);
           if (index != queueSet.scheduleQueue.size() - 1) {
@@ -162,7 +162,7 @@ public class StrictPriorityScheduler extends PriorityScheduler {
         } else {
           return false;
         }
-      }
+      }*/
     }
   }
 
@@ -174,7 +174,9 @@ public class StrictPriorityScheduler extends PriorityScheduler {
 
     @Override
     public boolean canExecute(short executeReference) {
-      synchronized (queueSet.scheduleQueue.getModificationLock()) {
+      return super.canExecute(executeReference);
+      // TODO - worth maintaining the below check?
+      /*synchronized (queueSet.scheduleQueue.getModificationLock()) {
         if (super.canExecute(executeReference)) {
           int index = queueSet.scheduleQueue.lastIndexOf(this);
           if (index != queueSet.scheduleQueue.size() - 1) {
@@ -191,7 +193,7 @@ public class StrictPriorityScheduler extends PriorityScheduler {
         } else {
           return false;
         }
-      }
+      }*/
     }
   }
 }

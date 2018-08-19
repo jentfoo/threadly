@@ -48,7 +48,7 @@ public class PrioritySchedulerQueueManagerTest extends ThreadlyTester {
     assertTrue(queueManager.remove(callable));
     assertFalse(queueManager.remove(callable));
     
-    queueManager.lowPriorityQueueSet.scheduleQueue.addFirst(task);
+    queueManager.lowPriorityQueueSet.scheduleQueue.sortedQueue.addFirst(task);
 
     assertTrue(queueManager.remove(callable));
     assertFalse(queueManager.remove(callable));
@@ -67,7 +67,7 @@ public class PrioritySchedulerQueueManagerTest extends ThreadlyTester {
     assertTrue(queueManager.remove(runnable));
     assertFalse(queueManager.remove(runnable));
     
-    queueManager.lowPriorityQueueSet.scheduleQueue.addFirst(task);
+    queueManager.lowPriorityQueueSet.scheduleQueue.sortedQueue.addFirst(task);
 
     assertTrue(queueManager.remove(runnable));
     assertFalse(queueManager.remove(runnable));
