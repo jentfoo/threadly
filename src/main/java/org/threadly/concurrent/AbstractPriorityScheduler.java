@@ -9,7 +9,7 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import org.threadly.concurrent.collections.ConcurrentArrayList;
@@ -369,16 +369,16 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
     }
     
     protected static class ScheduleQueue extends AbstractCollection<TaskWrapper> {
-      protected final ReentrantLock removeLock;
       protected final ConcurrentLinkedQueue<TaskWrapper> tempAddQueue;
       protected final ConcurrentArrayList<TaskWrapper> sortedQueue;
       protected final Function<Integer, Long> scheduleQueueRunTimeByIndex;
+      private final AtomicBoolean synchingQueues;
       
       public ScheduleQueue() {
-        removeLock = new ReentrantLock();
         tempAddQueue = new ConcurrentLinkedQueue<>();
         this.sortedQueue = new ConcurrentArrayList<>(QUEUE_FRONT_PADDING, QUEUE_REAR_PADDING);
         scheduleQueueRunTimeByIndex = (index) -> sortedQueue.get(index).getRunTime();
+        synchingQueues = new AtomicBoolean();
       }
 
       public int getWaitingForExecutionTaskCount() {
@@ -431,20 +431,26 @@ public abstract class AbstractPriorityScheduler extends AbstractSubmitterSchedul
       protected void syncQueue() {
         if (tempAddQueue.isEmpty()) {
           return;
-        }
-        synchronized (sortedQueue.getModificationLock()) {
-          TaskWrapper task;
-          long lastTaskTime = Long.MAX_VALUE;
-          int lastTaskIndex = -1;
-          while ((task = tempAddQueue.poll()) != null) {
-            long runTime = task.getRunTime();
-            lastTaskIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
-                                                           lastTaskTime <= runTime ? 
-                                                             lastTaskIndex : 0,
-                                                           sortedQueue.size() - 1, 
-                                                           runTime, true);
-            lastTaskTime = runTime;
-            sortedQueue.add(lastTaskIndex, task);
+        } else if (synchingQueues.compareAndSet(false, true)) {
+          synchronized (sortedQueue.getModificationLock()) {
+            TaskWrapper task;
+            long lastTaskTime = Long.MAX_VALUE;
+            int lastTaskIndex = -1;
+            while ((task = tempAddQueue.poll()) != null) {
+              long runTime = task.getRunTime();
+              lastTaskIndex = SortUtils.getInsertionEndIndex(scheduleQueueRunTimeByIndex, 
+                                                             lastTaskTime <= runTime ? 
+                                                               lastTaskIndex : 0,
+                                                             sortedQueue.size() - 1, 
+                                                             runTime, true);
+              lastTaskTime = runTime;
+              sortedQueue.add(lastTaskIndex, task);
+            }
+          }
+          synchingQueues.set(false);
+        } else {
+          while (synchingQueues.get()) {  // just wait till sync finishes, don't add to lock contention
+            Thread.yield();
           }
         }
       }
