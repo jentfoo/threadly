@@ -339,7 +339,7 @@ public class FutureUtils extends InternalFutureUtils {
     } else if (size == 1) {
       futures.iterator().next().listener(listener, executor);
     } else {
-      AtomicInteger remaining = new AtomicInteger(size);
+      AtomicInteger remaining = new AtomicInteger(size);  // TODO - switch to VarHandle
       Runnable decrementingListener = () -> {
         if (remaining.decrementAndGet() == 0) {
           if (executor == null) {
@@ -385,7 +385,7 @@ public class FutureUtils extends InternalFutureUtils {
     SettableListenableFuture<T> result = new SettableListenableFuture<>(false);
     FutureCallback<T> callback;
     if (ignoreErrors) {
-      AtomicInteger errorsRemaining = new AtomicInteger(c.size());
+      AtomicInteger errorsRemaining = new AtomicInteger(c.size());  // TODO - switch to VarHandler
       callback = new FutureCallback<T>() {
         @Override
         public void handleResult(T t) {

@@ -1,5 +1,7 @@
 package org.threadly.concurrent.future;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -9,7 +11,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -504,7 +505,7 @@ class InternalFutureUtils {
     @SuppressWarnings("rawtypes")
     private static final ListenableFuture[] EMPTY_ARRAY = new ListenableFuture[0];
     
-    protected final AtomicInteger remainingResult;
+    protected final AtomicInteger remainingResult;  // TODO - switch to VarHandle
     private ArrayList<ListenableFuture<? extends T>> futures;
     protected ListenableFuture<? extends T>[] buildingResult;
     
@@ -832,20 +833,33 @@ class InternalFutureUtils {
    * @since 4.7.2
    */
   protected static class CancelOnErrorFutureCallback implements Consumer<Throwable> {
+    private static VarHandle CANCELED;
+    
+    static {
+      VarHandle canceled = null;
+      try {
+        canceled = MethodHandles.lookup().findVarHandle(CancelOnErrorFutureCallback.class, 
+                                                        "canceled", boolean.class);
+      } catch (NoSuchFieldException | IllegalAccessException e) {
+        throw new RuntimeException(e);
+      } finally {
+        CANCELED = canceled;
+      }
+    }
+    
     private final Iterable<? extends ListenableFuture<?>> futures;
     private final boolean interruptThread;
-    private final AtomicBoolean canceled;
+    private volatile boolean canceled;
     
     public CancelOnErrorFutureCallback(Iterable<? extends ListenableFuture<?>> futures, 
                                        boolean interruptThread) {
       this.futures = futures;
       this.interruptThread = interruptThread;
-      this.canceled = new AtomicBoolean(false);
     }
 
     @Override
     public void accept(Throwable t) {
-      if (! canceled.get() && canceled.compareAndSet(false, true)) {
+      if (! canceled && CANCELED.compareAndSet(this, false, true)) {
         FutureUtils.cancelIncompleteFutures(futures, interruptThread);
       }
     }

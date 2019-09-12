@@ -1,6 +1,7 @@
 package org.threadly.util;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 
 /**
  * An abstract implementation of the {@link Service} interface.
@@ -11,7 +12,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @since 2.6.0
  */
 public abstract class AbstractService implements Service {
-  private AtomicInteger state = new AtomicInteger(0); // 0 = new, 1 = started, 2 = stopped
+  private static VarHandle STATE;
+  
+  static {
+    VarHandle state = null;
+    try {
+      state = MethodHandles.lookup().findVarHandle(AbstractService.class, "state", int.class);
+    } catch (NoSuchFieldException | IllegalAccessException e) {
+      throw new RuntimeException(e);
+    } finally {
+      STATE = state;
+    }
+  }
+  
+  private volatile int state = 0; // 0 = new, 1 = started, 2 = stopped
   
   @Override
   public void start() throws IllegalStateException {
@@ -22,7 +36,7 @@ public abstract class AbstractService implements Service {
   
   @Override
   public boolean startIfNotStarted() {
-    if (state.get() == 0 && state.compareAndSet(0, 1)) {
+    if (state == 0 && STATE.compareAndSet(this, 0, 1)) {
       startupService();
       
       return true;
@@ -47,7 +61,7 @@ public abstract class AbstractService implements Service {
   
   @Override
   public boolean stopIfRunning() {
-    if (state.get() == 1 && state.compareAndSet(1, 2)) {
+    if (state == 1 && STATE.compareAndSet(this, 1, 2)) {
       shutdownService();
       
       return true;
@@ -65,17 +79,16 @@ public abstract class AbstractService implements Service {
   
   @Override
   public boolean isRunning() {
-    return state.get() == 1;
+    return state == 1;
   }
   
   @Override
   public boolean hasStopped() {
-    return state.get() == 2;
+    return state == 2;
   }
   
   @Override
   protected void finalize() throws Throwable {
-    super.finalize();
     if (isRunning()) {
       ExceptionUtils.handleException(new IllegalStateException(getClass() + " was not stopped before GC"));
     }
