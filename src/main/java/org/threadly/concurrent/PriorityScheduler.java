@@ -440,6 +440,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
     protected final AtomicInteger currentPoolSize;
     protected final Object workerStopNotifyLock;
     private final AtomicBoolean shutdownStarted;
+    private volatile boolean needToCheckWorkerForShutdown;
     private volatile boolean shutdownFinishing; // once true, never goes to false
     private volatile int maxPoolSize;  // can only be changed when poolSizeChangeLock locked
     private volatile long workerTimedParkRunTime;
@@ -463,6 +464,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
       this.maxPoolSize = poolSize;
       this.workerTimedParkRunTime = Long.MAX_VALUE;
       shutdownStarted = new AtomicBoolean(false);
+      needToCheckWorkerForShutdown = false;
       shutdownFinishing = false;
     }
 
@@ -541,7 +543,8 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
      */
     public void finishShutdown() {
       shutdownFinishing = true;
-      
+      needToCheckWorkerForShutdown = true;
+
       // submit task to wake up workers and start final consumption of tasks / thread shutdowns
       addPoolStateChangeTask(new InternalRunnable() {
         @Override
@@ -658,6 +661,7 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         // now that pool size increased, start a worker so workers we can for the waiting tasks
         handleQueueUpdate();
       } else if (currentPoolSize.get() > maxPoolSize) {
+        needToCheckWorkerForShutdown = true;
         addPoolStateChangeTask(new InternalRunnable() {
           @Override
           public void run() {
@@ -775,6 +779,31 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
         worker.nextIdleWorker = null;
       }
     }
+    
+    /**
+     * Check if the worker should be shutdown based off the state of the pool.  This should only 
+     * be invoked when a worker is idle and thus capable of being shutdown.
+     * 
+     * @return {@code true} if the idle worker should be shutdown
+     */
+    protected boolean shouldShutdownWorker() {
+      while (true) {
+        int casPoolSize;
+        if (shutdownFinishing) {
+          currentPoolSize.decrementAndGet();
+          return true;
+        } else if ((casPoolSize = currentPoolSize.get()) > maxPoolSize) {
+          if (currentPoolSize.compareAndSet(casPoolSize, casPoolSize - 1)) {
+            return true;
+          } // else, retry, see if we need to shutdown
+        } else {
+          // pool state is consistent, we should keep running
+          break;
+        }
+      }
+      
+      return false;
+    }
 
     /**
      * Invoked when a worker becomes idle.  This will provide another task for that worker, or 
@@ -789,29 +818,35 @@ public class PriorityScheduler extends AbstractPriorityScheduler {
        * break out of the task polling loop below.  This is done as an optimization, to avoid 
        * needing to check these on every loop (since they rarely change)
        */
-      int casPoolSize;
-      while (true) {
+      if (needToCheckWorkerForShutdown) {
         if (shutdownFinishing) {
           currentPoolSize.decrementAndGet();
           worker.stopIfRunning();
           return null;
-        } else if ((casPoolSize = currentPoolSize.get()) > maxPoolSize) {
-          if (currentPoolSize.compareAndSet(casPoolSize, casPoolSize - 1)) {
-            worker.stopIfRunning();
-            return null;
-          } // else, retry, see if we need to shutdown
-        } else {
-          // pool state is consistent, we should keep running
-          break;
+        }
+        while (true) {
+          int casPoolSize = currentPoolSize.get();
+          if (casPoolSize > maxPoolSize) {
+            if (currentPoolSize.compareAndSet(casPoolSize, casPoolSize - 1)) {
+              worker.stopIfRunning();
+              return null;
+            } // else, retry, see if we need to shutdown
+          } else {
+            // pool state is consistent, we should keep running
+            needToCheckWorkerForShutdown = false;
+            break;
+          }
         }
       }
       
       boolean queued = false;
       try {
         while (true) {
+          int currentSize;
           TaskWrapper nextTask = 
-              queueManager.getNextTask(stavableStartsThreads || casPoolSize == 1 || 
-                                       currentPoolSize.get() >= maxPoolSize ||
+              queueManager.getNextTask(stavableStartsThreads || 
+                                       (currentSize = currentPoolSize.get()) == 1 || 
+                                       currentSize >= maxPoolSize ||
                                        worker.nextIdleWorker != null ||
                                        shutdownStarted.get());
 
