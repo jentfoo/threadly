@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -27,6 +28,7 @@ public class SettableListenableFutureTest extends CompletableListenableFutureInt
     slf = new SettableListenableFuture<>();
   }
   
+  @Override
   @After
   public void cleanup() {
     slf = null;
@@ -599,8 +601,8 @@ public class SettableListenableFutureTest extends CompletableListenableFutureInt
   
   private static class SettableListenableFutureFactory implements CompletableListenableFutureFactory {
     @Override
-    public <T> SettableListenableFuture<T> makeNewCompletable() {
-      return new SettableListenableFuture<>();
+    public <T> SettableListenableFuture<T> makeNewCompletable(Executor executor) {
+      return new SettableListenableFuture<>(true, executor);
     }
     
     @Override

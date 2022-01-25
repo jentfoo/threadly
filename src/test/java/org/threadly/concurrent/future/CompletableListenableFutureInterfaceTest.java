@@ -4,12 +4,14 @@ import static org.junit.Assert.*;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Test;
 import org.threadly.concurrent.DoNothingRunnable;
+import org.threadly.concurrent.SingleThreadScheduler;
 import org.threadly.concurrent.future.ListenableFuture.ListenerOptimizationStrategy;
 import org.threadly.test.concurrent.AsyncVerifier;
 import org.threadly.test.concurrent.TestRunnable;
@@ -391,6 +393,35 @@ public abstract class CompletableListenableFutureInterfaceTest extends Listenabl
   }
   
   @Test
+  public void cancelListenerExecutionThreadTest() throws InterruptedException, TimeoutException {
+    cancelListenerExecutionThreadTest(null);
+  }
+  
+  @Test
+  public void cancelListenerExecutionThreadListenerOptimizationTest() throws InterruptedException, TimeoutException {
+    cancelListenerExecutionThreadTest(ListenableFuture.ListenerOptimizationStrategy.SingleThreadIfExecutorMatch);
+  }
+  
+  private void cancelListenerExecutionThreadTest(ListenableFuture.ListenerOptimizationStrategy optimization) throws InterruptedException, TimeoutException {
+    SingleThreadScheduler sts = new SingleThreadScheduler();
+    try {
+      Thread testThread = Thread.currentThread();
+      AbstractCompletableListenableFuture<String> slf = 
+          makeCompletableListenableFutureFactory().makeNewCompletable(sts);
+      AsyncVerifier av = new AsyncVerifier();
+      slf.listener(() -> {
+        av.assertTrue(Thread.currentThread() != testThread);
+        av.signalComplete();
+      }, sts, optimization);
+      
+      slf.cancel(false);
+      av.waitForTest();
+    } finally {
+      sts.shutdownNow();
+    }
+  }
+  
+  @Test
   public void completeWithResultIsDoneTest() {
     AbstractCompletableListenableFuture<String> slf = 
         makeCompletableListenableFutureFactory().makeNewCompletable();
@@ -661,7 +692,11 @@ public abstract class CompletableListenableFutureInterfaceTest extends Listenabl
   }
 
   protected interface CompletableListenableFutureFactory extends ListenableFutureFactory {
-    public <T> AbstractCompletableListenableFuture<T> makeNewCompletable();
+    default <T> AbstractCompletableListenableFuture<T> makeNewCompletable() {
+      return makeNewCompletable(null);
+    }
+    
+    public <T> AbstractCompletableListenableFuture<T> makeNewCompletable(Executor executor);
     public AbstractCompletableListenableFuture<?> makeCanceledCompletable();
     public AbstractCompletableListenableFuture<Object> makeWithFailureCompletable(Exception e);
     public <T> AbstractCompletableListenableFuture<T> makeWithResultCompletable(T result);

@@ -106,6 +106,11 @@ abstract class AbstractCompletableListenableFuture<T> extends AbstractCancellati
   private T result;
   private Throwable failure;
   
+  /**
+   * Construct a new {@link AbstractCompletableListenableFuture} which will be completed later.
+   * 
+   * @param executingExecutor Executor that this future is expected to complete execution on
+   */
   protected AbstractCompletableListenableFuture(Executor executingExecutor) {
     this.listenerHelper = new RunnableListenerHelper(true);
     this.executingExecutor = executingExecutor;
@@ -238,11 +243,18 @@ abstract class AbstractCompletableListenableFuture<T> extends AbstractCancellati
         }
       }
     } finally {
+      // must get a reference to the executor before we invoke completeState
+      Executor listenerExecutor = executingExecutor;
+      
       completeState();
 
-      // TODO - what about the invoking thread? https://github.com/threadly/threadly/issues/274
-      // callListeners invoked here instead of completeState() to reduce stack depth
-      listenerHelper.callListeners();
+      if (listenerExecutor != null) {
+        // we want to call the listeners on the executor that was expected to complete the future
+        // see https://github.com/threadly/threadly/issues/274
+        listenerExecutor.execute(listenerHelper::callListeners);
+      } else {
+        listenerHelper.callListeners();
+      }
     }
     return true;
   }
